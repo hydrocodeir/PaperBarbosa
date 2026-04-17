@@ -3,7 +3,12 @@ import yaml
 import numpy as np
 import pandas as pd
 
-from src.preprocessing import load_data, fill_tmean, prepare_station_series
+from src.preprocessing import (
+    load_data,
+    fill_tmean,
+    prepare_station_series,
+    filter_station_coverage,
+)
 from src.feature_engineering import deseasonalize, decade_index
 from src.modeling import fit_quantiles, maximum_entropy_bootstrap_slopes
 from src.evaluation import summarize_bootstrap, merge_fit_and_bootstrap
@@ -19,6 +24,89 @@ from src.visualization import (
 )
 
 
+def process_single_station(station_name, sub, cfg, fig_dir):
+    target = cfg["target_variable"]
+    sub = prepare_station_series(
+        sub,
+        target_variable=target,
+        max_gap=cfg["max_interp_gap"],
+        outlier_sigma=cfg["outlier_sigma"],
+    )
+
+    anomaly, seasonal, _ = deseasonalize(
+        sub[target].to_numpy(),
+        periods_per_year=cfg["harmonics_per_year"],
+    )
+    sub["seasonal_fit"] = seasonal
+    sub["deseasoned"] = anomaly
+    sub["time_decades"] = decade_index(sub["date"])
+
+    plot_figure2_deseasoned(
+        sub["date"],
+        sub["deseasoned"],
+        sub["time_decades"],
+        station_name,
+        fig_dir / f"{station_name}_figure2_deseasoned.png",
+    )
+
+    fit_df = fit_quantiles(sub["time_decades"], sub["deseasoned"], cfg["quantiles"])
+    fit_df["station_name"] = station_name
+
+    grid_df = fit_quantiles(sub["time_decades"], sub["deseasoned"], cfg["quantile_grid"])
+    grid_df["station_name"] = station_name
+
+    plot_figure3_quantile_slopes(
+        sub["time_decades"],
+        sub["deseasoned"],
+        cfg["quantile_grid"],
+        station_name,
+        fig_dir / f"{station_name}_figure3.png",
+    )
+
+    boot_df = maximum_entropy_bootstrap_slopes(
+        sub["time_decades"],
+        sub["deseasoned"],
+        cfg["quantiles"],
+        n_boot=cfg["bootstrap_samples"],
+        random_seed=cfg["random_seed"],
+        method=cfg.get("bootstrap_method", "meboot"),
+        block_length=cfg.get("bootstrap_block_length"),
+    )
+    boot_df["station_name"] = station_name
+
+    plot_figure4_bootstrap(
+        boot_df,
+        fit_df,
+        station_name,
+        cfg["quantiles"],
+        fig_dir / f"{station_name}_figure4.png",
+        x_mode="absolute",
+    )
+    plot_figure4_bootstrap(
+        boot_df,
+        fit_df,
+        station_name,
+        cfg["quantiles"],
+        fig_dir / f"{station_name}_figure4_centered.png",
+        x_mode="centered",
+        center_scale=cfg.get("bootstrap_centered_scale", 10000.0),
+    )
+
+    plot_station_timeseries(
+        sub["date"],
+        sub[target],
+        sub["seasonal_fit"],
+        sub["deseasoned"],
+        station_name,
+        fig_dir / f"{station_name}_timeseries.png",
+    )
+    plot_quantile_grid(grid_df, station_name, fig_dir / f"{station_name}_quantile_curve.png")
+    for q in cfg["quantiles"]:
+        plot_bootstrap_hist(boot_df, station_name, q, fig_dir / f"{station_name}_bootstrap_q{q}.png")
+
+    return sub, fit_df, grid_df, boot_df
+
+
 def main():
     cfg = yaml.safe_load(open("config.yaml", "r", encoding="utf-8"))
 
@@ -31,9 +119,17 @@ def main():
 
     df = load_data(cfg["data_path"], cfg["date_cols"])
     df = fill_tmean(df)
+    df = filter_station_coverage(
+        df,
+        station_col=cfg["station_col"],
+        date_col="date",
+        target_col=cfg["target_variable"],
+        min_start_date=cfg.get("min_start_date"),
+        max_end_date=cfg.get("max_end_date"),
+        max_missing_ratio=cfg.get("max_missing_ratio"),
+    )
 
     station_col = cfg["station_col"]
-    target = cfg["target_variable"]
 
     fit_rows = []
     grid_rows = []
@@ -41,111 +137,11 @@ def main():
     cleaned_rows = []
 
     for station_name, sub in df.groupby(station_col):
-        sub = prepare_station_series(
-            sub,
-            target_variable=target,
-            max_gap=cfg["max_interp_gap"],
-            outlier_sigma=cfg["outlier_sigma"],
-        )
-
-        anomaly, seasonal, _ = deseasonalize(
-            sub[target].to_numpy(),
-            periods_per_year=cfg["harmonics_per_year"],
-        )
-
-        sub["seasonal_fit"] = seasonal
-        sub["deseasoned"] = anomaly
-        sub["time_decades"] = decade_index(sub["date"])
-        
-        plot_figure2_deseasoned(
-            sub["date"],
-            sub["deseasoned"],
-            sub["time_decades"],
-            station_name,
-            fig_dir / f"{station_name}_figure2_deseasoned.png",
-        )
-
+        sub, fit_df, grid_df, boot_df = process_single_station(station_name, sub, cfg, fig_dir)
         cleaned_rows.append(sub)
-
-        fit_df = fit_quantiles(sub["time_decades"], sub["deseasoned"], cfg["quantiles"])
-        fit_df["station_name"] = station_name
         fit_rows.append(fit_df)
-
-        grid_df = fit_quantiles(
-            sub["time_decades"],
-            sub["deseasoned"],
-            cfg["quantile_grid"],
-        )
-        
-        grid_df["station_name"] = station_name
         grid_rows.append(grid_df)
-        
-        plot_figure3_quantile_slopes(
-            sub["time_decades"],
-            sub["deseasoned"],
-            cfg["quantile_grid"],
-            station_name,
-            fig_dir / f"{station_name}_figure3.png"
-        )
-        
-
-
-        boot_df = maximum_entropy_bootstrap_slopes(
-            sub["time_decades"],
-            sub["deseasoned"],
-            cfg["quantiles"],
-            n_boot=cfg["bootstrap_samples"],
-            random_seed=cfg["random_seed"],
-            method=cfg.get("bootstrap_method", "meboot"),
-            block_length=cfg.get("bootstrap_block_length"),
-        )
-        
-        boot_df["station_name"] = station_name
         boot_rows.append(boot_df)
-        
-        plot_figure4_bootstrap(
-            boot_df,
-            fit_df,
-            station_name,
-            cfg["quantiles"],
-            fig_dir / f"{station_name}_figure4.png",
-            x_mode="absolute",
-        )
-
-        plot_figure4_bootstrap(
-            boot_df,
-            fit_df,
-            station_name,
-            cfg["quantiles"],
-            fig_dir / f"{station_name}_figure4_centered.png",
-            x_mode="centered",
-            center_scale=cfg.get("bootstrap_centered_scale", 10000.0),
-        )
-        
-
-
-        plot_station_timeseries(
-            sub["date"],
-            sub[target],
-            sub["seasonal_fit"],
-            sub["deseasoned"],
-            station_name,
-            fig_dir / f"{station_name}_timeseries.png",
-        )
-
-        plot_quantile_grid(
-            grid_df,
-            station_name,
-            fig_dir / f"{station_name}_quantile_curve.png",
-        )
-
-        for q in cfg["quantiles"]:
-            plot_bootstrap_hist(
-                boot_df,
-                station_name,
-                q,
-                fig_dir / f"{station_name}_bootstrap_q{q}.png",
-            )
 
     cleaned_df = pd.concat(cleaned_rows, ignore_index=True)
     fit_df = pd.concat(fit_rows, ignore_index=True)
