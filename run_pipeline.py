@@ -96,6 +96,8 @@ def main():
             cfg["quantiles"],
             n_boot=cfg["bootstrap_samples"],
             random_seed=cfg["random_seed"],
+            method=cfg.get("bootstrap_method", "meboot"),
+            block_length=cfg.get("bootstrap_block_length"),
         )
         
         boot_df["station_name"] = station_name
