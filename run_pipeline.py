@@ -109,6 +109,17 @@ def main():
             station_name,
             cfg["quantiles"],
             fig_dir / f"{station_name}_figure4.png",
+            x_mode="absolute",
+        )
+
+        plot_figure4_bootstrap(
+            boot_df,
+            fit_df,
+            station_name,
+            cfg["quantiles"],
+            fig_dir / f"{station_name}_figure4_centered.png",
+            x_mode="centered",
+            center_scale=cfg.get("bootstrap_centered_scale", 10000.0),
         )
         
 

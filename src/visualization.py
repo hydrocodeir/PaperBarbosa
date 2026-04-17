@@ -116,12 +116,14 @@ def plot_figure4_bootstrap(
     fit_df,
     station_name,
     quantiles,
-    outpath
+    outpath,
+    x_mode="absolute",
+    center_scale=1.0,
 ):
     """
     Fig 4:
     - Adaptive histogram bins for each quantile
-    - Quantile-specific x-limits (better for very narrow distributions)
+    - Shared x-limits across quantiles (for direct comparison)
     - dashed vertical line = point estimate
     """
 
@@ -131,16 +133,11 @@ def plot_figure4_bootstrap(
     if len(quantiles) == 1:
         axes = [axes]
 
-    all_values = boot_df.loc[
-        boot_df["station_name"] == station_name, "slope_per_decade"
-    ].to_numpy(dtype=float)
-    all_values = all_values[np.isfinite(all_values)]
-    if all_values.size:
-        x_low, x_high = np.percentile(all_values, [0.5, 99.5])
-        x_span = x_high - x_low
-        x_pad = max(0.12 * x_span, 1e-6)
-    else:
-        x_low, x_high, x_pad = -1.0, 1.0, 0.0
+    x_mode = str(x_mode).lower()
+    if x_mode not in {"absolute", "centered"}:
+        raise ValueError("x_mode must be one of {'absolute', 'centered'}")
+
+    transformed_values_all = []
 
     # --- رسم subplot ها ---
     for i, q in enumerate(quantiles):
@@ -160,13 +157,21 @@ def plot_figure4_bootstrap(
             ax.set_title(f"τ = {q} (no data)")
             continue
 
-        slope = sub_fit["slope_per_decade"].iloc[0]
+        slope = float(sub_fit["slope_per_decade"].iloc[0])
         values = sub_boot["slope_per_decade"].to_numpy(dtype=float)
-        bins = _compute_hist_bins(values)
+        if x_mode == "centered":
+            transformed = (values - slope) * center_scale
+            ref_line_x = 0.0
+        else:
+            transformed = values
+            ref_line_x = slope
+
+        transformed_values_all.extend(transformed.tolist())
+        bins = _compute_hist_bins(transformed)
 
         # --- histogram ---
         ax.hist(
-            values,
+            transformed,
             bins=bins,
             color="gray",
             edgecolor="black"
@@ -184,7 +189,7 @@ def plot_figure4_bootstrap(
 
         # --- خط vertical dashed ---
         ax.axvline(
-            x=slope,
+            x=ref_line_x,
             linestyle="--",
             color="black",
             linewidth=1.5
@@ -193,16 +198,25 @@ def plot_figure4_bootstrap(
         ax.set_title(f"τ = {q}")
         ax.set_ylabel("Count")
 
-    if np.isfinite(x_low) and np.isfinite(x_high):
+    all_values = np.asarray(transformed_values_all, dtype=float)
+    all_values = all_values[np.isfinite(all_values)]
+    if all_values.size:
+        x_low, x_high = np.percentile(all_values, [0.5, 99.5])
+        x_span = x_high - x_low
+        x_pad = max(0.12 * x_span, 1e-6)
+
         if x_high <= x_low:
-            center = float(np.median(all_values)) if all_values.size else 0.0
+            center = float(np.median(all_values))
             for ax in axes:
                 ax.set_xlim(center - max(x_pad, 1e-6), center + max(x_pad, 1e-6))
         else:
             for ax in axes:
                 ax.set_xlim(x_low - x_pad, x_high + x_pad)
 
-    axes[-1].set_xlabel("Slope (°C/decade)")
+    if x_mode == "centered":
+        axes[-1].set_xlabel(f"Δ Slope relative to τ estimate (×{center_scale:g} °C/decade)")
+    else:
+        axes[-1].set_xlabel("Slope (°C/decade)")
 
     plt.tight_layout()
     plt.savefig(outpath, dpi=220)

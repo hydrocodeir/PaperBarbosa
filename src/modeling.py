@@ -32,8 +32,11 @@ def fit_quantiles(x_decades, y, quantiles):
 
 def _meboot_single(series, rng):
     """
-    Practical maximum-entropy-style bootstrap for a univariate time series.
-    This is a rank-preserving, smooth bootstrap inspired by Vinod & de Lacalle.
+    Maximum-entropy bootstrap (meboot-style) for a univariate time series.
+    Implementation follows the core Vinod & de Lacalle idea:
+    1) build entropy intervals from sorted observations,
+    2) sample from the implied piecewise-uniform distribution via inverse-CDF,
+    3) restore original rank order to preserve temporal dependence structure.
     """
     x = np.asarray(series, dtype=float)
     n = len(x)
@@ -56,15 +59,19 @@ def _meboot_single(series, rng):
     z[1:-1] = mids
     z[-1] = xs[-1] + right_width
 
-    # sample uniformly from each entropy interval
-    u = rng.uniform(size=n)
-    ys = z[:-1] + u * (z[1:] - z[:-1])
+    # draw sorted uniforms and map with inverse CDF of piecewise-uniform
+    # meboot approximation (equal probability mass 1/n per interval)
+    u = np.sort(rng.uniform(size=n))
+    scaled = np.clip(u * n, 0, n - 1e-12)
+    idx = np.floor(scaled).astype(int)
+    frac = scaled - idx
+    ys_sorted = z[idx] + frac * (z[idx + 1] - z[idx])
 
     # restore original temporal rank structure
     y = np.empty(n, dtype=float)
-    y[order] = np.sort(ys)
+    y[order] = ys_sorted
 
-    # preserve mean approximately
+    # preserve mean exactly
     y = y - y.mean() + x.mean()
     return y
 
