@@ -138,11 +138,10 @@ def plot_figure4_bootstrap(
         raise ValueError("x_mode must be one of {'absolute', 'centered'}")
 
     transformed_values_all = []
+    per_quantile = []
 
     # --- رسم subplot ها ---
     for i, q in enumerate(quantiles):
-        ax = axes[i]
-
         sub_boot = boot_df[
             (boot_df["station_name"] == station_name) &
             (boot_df["quantile"] == q)
@@ -154,7 +153,7 @@ def plot_figure4_bootstrap(
         ]
 
         if sub_boot.empty or sub_fit.empty:
-            ax.set_title(f"τ = {q} (no data)")
+            per_quantile.append((q, None, None))
             continue
 
         slope = float(sub_fit["slope_per_decade"].iloc[0])
@@ -167,12 +166,21 @@ def plot_figure4_bootstrap(
             ref_line_x = slope
 
         transformed_values_all.extend(transformed.tolist())
-        bins = _compute_hist_bins(transformed)
+        per_quantile.append((q, transformed, ref_line_x))
 
+    all_values = np.asarray(transformed_values_all, dtype=float)
+    all_values = all_values[np.isfinite(all_values)]
+    global_bins = _compute_hist_bins(all_values) if all_values.size else np.array([0.0, 1.0])
+
+    for i, (q, transformed, ref_line_x) in enumerate(per_quantile):
+        ax = axes[i]
+        if transformed is None:
+            ax.set_title(f"τ = {q} (no data)")
+            continue
         # --- histogram ---
         ax.hist(
             transformed,
-            bins=bins,
+            bins=global_bins,
             color="gray",
             edgecolor="black"
         )
@@ -198,8 +206,6 @@ def plot_figure4_bootstrap(
         ax.set_title(f"τ = {q}")
         ax.set_ylabel("Count")
 
-    all_values = np.asarray(transformed_values_all, dtype=float)
-    all_values = all_values[np.isfinite(all_values)]
     if all_values.size:
         x_low, x_high = np.percentile(all_values, [0.5, 99.5])
         x_span = x_high - x_low
