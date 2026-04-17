@@ -64,7 +64,7 @@ def _compute_hist_bins(values, min_bins=12, max_bins=50):
     return np.linspace(vals.min(), vals.max(), n_bins + 1)
 
 
-def _iter_geojson_rings(geometry):
+def _iter_geojson_paths(geometry):
     gtype = geometry.get("type")
     coords = geometry.get("coordinates", [])
     if gtype == "Polygon":
@@ -74,6 +74,14 @@ def _iter_geojson_rings(geometry):
         for poly in coords:
             for ring in poly:
                 yield np.asarray(ring, dtype=float)
+    elif gtype == "LineString":
+        yield np.asarray(coords, dtype=float)
+    elif gtype == "MultiLineString":
+        for line in coords:
+            yield np.asarray(line, dtype=float)
+    elif gtype == "GeometryCollection":
+        for subgeom in geometry.get("geometries", []):
+            yield from _iter_geojson_paths(subgeom)
 
 
 def plot_figure1_station_map(stations_df, geojson_path, outpath):
@@ -91,7 +99,7 @@ def plot_figure1_station_map(stations_df, geojson_path, outpath):
     features = gj.get("features", [])
     for feat in features:
         geom = feat.get("geometry", {})
-        for ring in _iter_geojson_rings(geom):
+        for ring in _iter_geojson_paths(geom):
             if ring.ndim != 2 or ring.shape[1] < 2:
                 continue
             ax.plot(ring[:, 0], ring[:, 1], color="0.35", linewidth=0.8)
@@ -184,7 +192,7 @@ def plot_figure3_quantile_slopes(
 
     plt.xlabel("Quantile")
     plt.ylabel("Slope (°C/decade)")
-    plt.title(f"{station_name}")
+    plt.title(f"{station_name}", pad=24)
 
     plt.tight_layout()
     plt.savefig(outpath, dpi=300, bbox_inches="tight")
@@ -413,7 +421,7 @@ def plot_figure2_deseasoned(date, deseasoned, time_decades, station_name, outpat
     )
     plt.gca().text(
         0.5,
-        1.02,
+        1.005,
         slope_text,
         transform=plt.gca().transAxes,
         ha="center",
@@ -421,7 +429,7 @@ def plot_figure2_deseasoned(date, deseasoned, time_decades, station_name, outpat
         fontsize=9,
     )
 
-    plt.title(f"{station_name}")
+    plt.title(f"{station_name}", pad=20)
     plt.ylabel("Deseasoned daily mean temperature anomaly (°C)")
     plt.xlabel("Date")
     plt.tight_layout()
