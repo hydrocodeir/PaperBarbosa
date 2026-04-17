@@ -207,7 +207,8 @@ marimo/_lsp/
 __marimo__/
 
 
-data/raw_data.csv
+data/data.csv
+data/stationsInfo.csv
 outputs/*
 outputs/figures/*
 outputs/tables/*

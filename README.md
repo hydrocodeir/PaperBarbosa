@@ -7,7 +7,7 @@ to a station dataset with daily observations.
 ## Expected input
 Place your CSV at:
 
-`data/raw_data.csv`
+`data/data.csv`
 
 Expected columns:
 - station_id
