@@ -12,3 +12,8 @@ max_interp_gap: 3
 harmonics_per_year: 2
 station_col: station_name
 date_cols: [year, month, day]
+station_info_path: data/stationsInfo.csv
+iran_geojson_path: data/Iran.geojson
+min_start_date: null
+max_end_date: null
+max_missing_ratio: null

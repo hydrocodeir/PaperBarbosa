@@ -9,6 +9,10 @@ Place your CSV at:
 
 `data/data.csv`
 
+For Figure 1 (station map), also provide:
+- `data/stationsInfo.csv` (station metadata with `latitude` and `longitude`)
+- `data/Iran.geojson` (Iran boundary geometry)
+
 Expected columns:
 - station_id
 - station_name
@@ -33,3 +37,11 @@ The pipeline writes outputs into `outputs/`:
 - bootstrap_summary.csv
 - cluster_distance_matrix_tau_*.csv
 - figures/*.png
+
+## Paper-aligned defaults
+- Quantile grid follows the article setup: 0.10 to 0.90 with step 0.02.
+- Figure styles are configured for publication-readability (higher DPI, consistent typography).
+- Optional station coverage filters can be set in `config.yaml`:
+  - `min_start_date`
+  - `max_end_date`
+  - `max_missing_ratio`
