@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 
+
 def load_data(path, date_cols):
     df = pd.read_csv(path)
     missing = [c for c in date_cols if c not in df.columns]
@@ -17,6 +18,39 @@ def fill_tmean(df):
         est = (df["tmin"] + df["tmax"]) / 2.0
         df["tmean"] = df["tmean"].fillna(est)
     return df
+
+
+def filter_station_coverage(
+    df,
+    station_col="station_name",
+    date_col="date",
+    target_col="tmean",
+    min_start_date=None,
+    max_end_date=None,
+    max_missing_ratio=None,
+):
+    """
+    Optional pre-filter that mirrors the paper's station selection idea:
+    keep stations with sufficient temporal coverage and limited missingness.
+    """
+    if station_col not in df.columns:
+        raise ValueError(f"Missing station column '{station_col}'")
+    if date_col not in df.columns:
+        raise ValueError(f"Missing date column '{date_col}'")
+    if target_col not in df.columns:
+        raise ValueError(f"Missing target column '{target_col}'")
+
+    keep_ids = []
+    for sid, sub in df.groupby(station_col):
+        s = sub.sort_values(date_col)
+        start_ok = True if min_start_date is None else (s[date_col].min() <= pd.Timestamp(min_start_date))
+        end_ok = True if max_end_date is None else (s[date_col].max() >= pd.Timestamp(max_end_date))
+        miss_ratio = s[target_col].isna().mean()
+        missing_ok = True if max_missing_ratio is None else (miss_ratio <= float(max_missing_ratio))
+        if start_ok and end_ok and missing_ok:
+            keep_ids.append(sid)
+    return df[df[station_col].isin(keep_ids)].copy()
+
 
 def reindex_station_daily(sub):
     sub = sub.sort_values("date").copy()
