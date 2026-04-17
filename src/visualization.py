@@ -10,6 +10,37 @@ def ensure_dir(path):
     Path(path).mkdir(parents=True, exist_ok=True)
 
 
+def _compute_hist_bins(values, min_bins=12, max_bins=50):
+    """
+    Compute histogram bin edges using the Freedman-Diaconis rule with robust fallbacks.
+    This avoids degenerate histograms when bootstrap ranges are very narrow.
+    """
+    vals = np.asarray(values, dtype=float)
+    vals = vals[np.isfinite(vals)]
+    if vals.size < 2:
+        return np.array([0.0, 1.0])
+
+    q1, q3 = np.percentile(vals, [25, 75])
+    iqr = q3 - q1
+    data_range = vals.max() - vals.min()
+
+    if data_range <= 0:
+        eps = max(abs(vals[0]) * 1e-4, 1e-6)
+        return np.linspace(vals[0] - eps, vals[0] + eps, min_bins + 1)
+
+    if iqr > 0:
+        width = 2 * iqr * (vals.size ** (-1 / 3))
+    else:
+        width = data_range / min_bins
+
+    if width <= 0:
+        width = data_range / min_bins
+
+    n_bins = int(np.ceil(data_range / width))
+    n_bins = int(np.clip(n_bins, min_bins, max_bins))
+    return np.linspace(vals.min(), vals.max(), n_bins + 1)
+
+
 def plot_figure3_quantile_slopes(
     x_decades,
     y,
@@ -88,35 +119,17 @@ def plot_figure4_bootstrap(
     outpath
 ):
     """
-    Fig 4 دقیق:
-    - x-axis مشترک برای همه subplot ها
-    - bin width = 0.005
-    - dashed vertical line = punctual estimate
+    Fig 4:
+    - Adaptive histogram bins for each quantile
+    - Quantile-specific x-limits (better for very narrow distributions)
+    - dashed vertical line = point estimate
     """
 
     Path(outpath).parent.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(len(quantiles), 1, figsize=(6, 8), sharex=True)
-
-    # --- جمع کردن کل داده برای تعیین محدوده مشترک ---
-    all_values = []
-
-    for q in quantiles:
-        sub = boot_df[
-            (boot_df["station_name"] == station_name) &
-            (boot_df["quantile"] == q)
-        ]
-        all_values.extend(sub["slope_per_decade"].values)
-
-    all_values = np.array(all_values)
-
-    # --- تعیین بازه مشترک ---
-    xmin = np.nanmin(all_values)
-    xmax = np.nanmax(all_values)
-
-    # --- ایجاد bin با گام 0.005 ---
-    bin_width = 0.001
-    bins = np.arange(xmin, xmax + bin_width, bin_width)
+    fig, axes = plt.subplots(len(quantiles), 1, figsize=(6, 8), sharex=False)
+    if len(quantiles) == 1:
+        axes = [axes]
 
     # --- رسم subplot ها ---
     for i, q in enumerate(quantiles):
@@ -137,14 +150,26 @@ def plot_figure4_bootstrap(
             continue
 
         slope = sub_fit["slope_per_decade"].iloc[0]
+        values = sub_boot["slope_per_decade"].to_numpy(dtype=float)
+        bins = _compute_hist_bins(values)
 
         # --- histogram ---
         ax.hist(
-            sub_boot["slope_per_decade"],
+            values,
             bins=bins,
             color="gray",
             edgecolor="black"
         )
+
+        # --- zoom on robust range for readability ---
+        q_low, q_high = np.percentile(values, [0.5, 99.5])
+        span = q_high - q_low
+        pad = max(0.15 * span, 1e-6)
+        if span <= 0:
+            center = float(np.median(values))
+            ax.set_xlim(center - pad, center + pad)
+        else:
+            ax.set_xlim(q_low - pad, q_high + pad)
 
         # --- خط vertical dashed ---
         ax.axvline(
@@ -201,7 +226,18 @@ def plot_bootstrap_hist(boot_df, station_name, quantile, outpath):
         & (boot_df["quantile"] == quantile)
     ]
     plt.figure(figsize=(6, 4))
-    plt.hist(sub["slope_per_decade"], bins=20)
+    values = sub["slope_per_decade"].to_numpy(dtype=float)
+    bins = _compute_hist_bins(values)
+    plt.hist(values, bins=bins)
+    if values.size:
+        q_low, q_high = np.percentile(values, [0.5, 99.5])
+        span = q_high - q_low
+        pad = max(0.15 * span, 1e-6)
+        if span <= 0:
+            center = float(np.median(values))
+            plt.xlim(center - pad, center + pad)
+        else:
+            plt.xlim(q_low - pad, q_high + pad)
     plt.xlabel("Slope (°C/decade)")
     plt.ylabel("Count")
     plt.title(f"{station_name}: bootstrap slopes q={quantile}")
