@@ -185,6 +185,16 @@ def plot_figure4_bootstrap(
             edgecolor="black"
         )
 
+        # --- zoom on robust range for readability ---
+        q_low, q_high = np.percentile(values, [0.5, 99.5])
+        span = q_high - q_low
+        pad = max(0.15 * span, 1e-6)
+        if span <= 0:
+            center = float(np.median(values))
+            ax.set_xlim(center - pad, center + pad)
+        else:
+            ax.set_xlim(q_low - pad, q_high + pad)
+
         # --- خط vertical dashed ---
         ax.axvline(
             x=ref_line_x,
