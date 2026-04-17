@@ -9,6 +9,10 @@ Place your CSV at:
 
 `data/data.csv`
 
+For Figure 1 (station map), also provide:
+- `data/stationsInfo.csv` (station metadata with `latitude` and `longitude`)
+- `data/Iran.geojson` (Iran boundary geometry)
+
 Expected columns:
 - station_id
 - station_name

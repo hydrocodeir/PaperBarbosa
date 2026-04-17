@@ -1,4 +1,5 @@
 from pathlib import Path
+import warnings
 import yaml
 import numpy as np
 import pandas as pd
@@ -21,6 +22,7 @@ from src.visualization import (
     plot_figure2_deseasoned,
     plot_figure3_quantile_slopes,
     plot_figure4_bootstrap,
+    plot_figure1_station_map,
 )
 
 
@@ -116,6 +118,20 @@ def main():
     table_dir = out / "tables"
     fig_dir.mkdir(parents=True, exist_ok=True)
     table_dir.mkdir(parents=True, exist_ok=True)
+
+    station_info_path = Path(cfg.get("station_info_path", "data/stationsInfo.csv"))
+    iran_geojson_path = Path(cfg.get("iran_geojson_path", "data/Iran.geojson"))
+    if station_info_path.exists() and iran_geojson_path.exists():
+        stations_df = pd.read_csv(station_info_path)
+        plot_figure1_station_map(
+            stations_df,
+            iran_geojson_path,
+            fig_dir / "figure1_station_map.png",
+        )
+    else:
+        warnings.warn(
+            f"Figure 1 skipped: required files not found ({station_info_path}, {iran_geojson_path})."
+        )
 
     df = load_data(cfg["data_path"], cfg["date_cols"])
     df = fill_tmean(df)

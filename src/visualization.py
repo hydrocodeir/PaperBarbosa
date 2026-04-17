@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -61,6 +62,62 @@ def _compute_hist_bins(values, min_bins=12, max_bins=50):
     n_bins = int(np.ceil(data_range / width))
     n_bins = int(np.clip(n_bins, min_bins, max_bins))
     return np.linspace(vals.min(), vals.max(), n_bins + 1)
+
+
+def _iter_geojson_rings(geometry):
+    gtype = geometry.get("type")
+    coords = geometry.get("coordinates", [])
+    if gtype == "Polygon":
+        for ring in coords:
+            yield np.asarray(ring, dtype=float)
+    elif gtype == "MultiPolygon":
+        for poly in coords:
+            for ring in poly:
+                yield np.asarray(ring, dtype=float)
+
+
+def plot_figure1_station_map(stations_df, geojson_path, outpath):
+    """
+    Paper-style station map: country boundary + station points.
+    """
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    with open(geojson_path, "r", encoding="utf-8") as f:
+        gj = json.load(f)
+
+    fig, ax = plt.subplots(figsize=(8.5, 8))
+
+    features = gj.get("features", [])
+    for feat in features:
+        geom = feat.get("geometry", {})
+        for ring in _iter_geojson_rings(geom):
+            if ring.ndim != 2 or ring.shape[1] < 2:
+                continue
+            ax.plot(ring[:, 0], ring[:, 1], color="0.35", linewidth=0.8)
+
+    st = stations_df.dropna(subset=["longitude", "latitude"]).copy()
+    ax.scatter(st["longitude"], st["latitude"], s=30, color="black", zorder=3)
+
+    # number labels similar to paper map notation
+    for idx, row in st.reset_index(drop=True).iterrows():
+        ax.text(
+            row["longitude"] + 0.08,
+            row["latitude"] + 0.08,
+            str(idx + 1),
+            fontsize=7,
+            color="black",
+            zorder=4,
+        )
+
+    ax.set_xlabel("Longitude")
+    ax.set_ylabel("Latitude")
+    ax.set_title("Figure 1. Station map over Iran")
+    ax.set_aspect("equal", adjustable="datalim")
+    ax.grid(True, alpha=0.2)
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()
 
 
 def plot_figure3_quantile_slopes(
@@ -348,6 +405,21 @@ def plot_figure2_deseasoned(date, deseasoned, time_decades, station_name, outpat
     plt.plot(date, yhat05, linestyle="--", linewidth=1.4, color="black")
     plt.plot(date, yhat50, linestyle="-",  linewidth=1.4, color="black")
     plt.plot(date, yhat95, linestyle=":",  linewidth=1.8, color="black")
+
+    slope_text = (
+        f"Slope/decade  τ=0.05: {q05.params[1]:+.3f} °C"
+        f" | τ=0.50: {q50.params[1]:+.3f} °C"
+        f" | τ=0.95: {q95.params[1]:+.3f} °C"
+    )
+    plt.gca().text(
+        0.5,
+        1.02,
+        slope_text,
+        transform=plt.gca().transAxes,
+        ha="center",
+        va="bottom",
+        fontsize=9,
+    )
 
     plt.title(f"{station_name}")
     plt.ylabel("Deseasoned daily mean temperature anomaly (°C)")
