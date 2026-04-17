@@ -4,10 +4,32 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 from scipy.cluster.hierarchy import dendrogram
-from scipy.stats import gaussian_kde
 
 def ensure_dir(path):
     Path(path).mkdir(parents=True, exist_ok=True)
+
+
+def set_publication_style():
+    """
+    Style tuned for journal-ready figures (readable labels, thin lines, high contrast).
+    """
+    plt.rcParams.update(
+        {
+            "figure.dpi": 220,
+            "savefig.dpi": 300,
+            "font.size": 10,
+            "axes.titlesize": 11,
+            "axes.labelsize": 10,
+            "xtick.labelsize": 9,
+            "ytick.labelsize": 9,
+            "legend.fontsize": 9,
+            "axes.grid": True,
+            "grid.alpha": 0.25,
+            "grid.linestyle": "--",
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+        }
+    )
 
 
 def _compute_hist_bins(values, min_bins=12, max_bins=50):
@@ -56,6 +78,7 @@ def plot_figure3_quantile_slopes(
     """
 
     Path(outpath).parent.mkdir(parents=True, exist_ok=True)
+    set_publication_style()
 
     x = np.asarray(x_decades, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -107,7 +130,7 @@ def plot_figure3_quantile_slopes(
     plt.title(f"{station_name}")
 
     plt.tight_layout()
-    plt.savefig(outpath, dpi=220)
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -128,6 +151,7 @@ def plot_figure4_bootstrap(
     """
 
     Path(outpath).parent.mkdir(parents=True, exist_ok=True)
+    set_publication_style()
 
     fig, axes = plt.subplots(len(quantiles), 1, figsize=(6, 8), sharex=True)
     if len(quantiles) == 1:
@@ -186,15 +210,6 @@ def plot_figure4_bootstrap(
         )
 
         # --- zoom on robust range for readability ---
-        q_low, q_high = np.percentile(values, [0.5, 99.5])
-        span = q_high - q_low
-        pad = max(0.15 * span, 1e-6)
-        if span <= 0:
-            center = float(np.median(values))
-            ax.set_xlim(center - pad, center + pad)
-        else:
-            ax.set_xlim(q_low - pad, q_high + pad)
-
         # --- خط vertical dashed ---
         ax.axvline(
             x=ref_line_x,
@@ -225,12 +240,13 @@ def plot_figure4_bootstrap(
         axes[-1].set_xlabel("Slope (°C/decade)")
 
     plt.tight_layout()
-    plt.savefig(outpath, dpi=220)
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close()
 
 
 def plot_station_timeseries(date, raw, seasonal, anomaly, station_name, outpath):
     ensure_dir(Path(outpath).parent)
+    set_publication_style()
     plt.figure(figsize=(12, 5))
     plt.plot(date, raw, linewidth=0.8, label="raw tmean")
     plt.plot(date, seasonal, linewidth=1.2, label="seasonal fit")
@@ -238,12 +254,13 @@ def plot_station_timeseries(date, raw, seasonal, anomaly, station_name, outpath)
     plt.title(f"{station_name}: raw, seasonal fit, and deseasoned series")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(outpath, dpi=180)
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close()
 
 
 def plot_quantile_grid(grid_df, station_name, outpath):
     ensure_dir(Path(outpath).parent)
+    set_publication_style()
     sub = grid_df[grid_df["station_name"] == station_name].sort_values("quantile")
     plt.figure(figsize=(7, 5))
     plt.plot(sub["quantile"], sub["slope_per_decade"], marker="o")
@@ -255,12 +272,13 @@ def plot_quantile_grid(grid_df, station_name, outpath):
     plt.ylabel("Slope (°C/decade)")
     plt.title(f"{station_name}: quantile slope curve")
     plt.tight_layout()
-    plt.savefig(outpath, dpi=180)
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close()
 
 
 def plot_bootstrap_hist(boot_df, station_name, quantile, outpath):
     ensure_dir(Path(outpath).parent)
+    set_publication_style()
     sub = boot_df[
         (boot_df["station_name"] == station_name)
         & (boot_df["quantile"] == quantile)
@@ -282,17 +300,18 @@ def plot_bootstrap_hist(boot_df, station_name, quantile, outpath):
     plt.ylabel("Count")
     plt.title(f"{station_name}: bootstrap slopes q={quantile}")
     plt.tight_layout()
-    plt.savefig(outpath, dpi=180)
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close()
 
 
 def plot_dendrogram(Z, labels, quantile, outpath):
     ensure_dir(Path(outpath).parent)
+    set_publication_style()
     plt.figure(figsize=(10, 5))
     dendrogram(Z, labels=labels)
     plt.title(f"Dendrogram for quantile {quantile}")
     plt.tight_layout()
-    plt.savefig(outpath, dpi=180)
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -306,6 +325,7 @@ def plot_figure2_deseasoned(date, deseasoned, time_decades, station_name, outpat
     - 0.95 dotted
     """
     ensure_dir(Path(outpath).parent)
+    set_publication_style()
 
     date = pd.to_datetime(date)
     y = np.asarray(deseasoned, dtype=float)
@@ -333,5 +353,5 @@ def plot_figure2_deseasoned(date, deseasoned, time_decades, station_name, outpat
     plt.ylabel("Deseasoned daily mean temperature anomaly (°C)")
     plt.xlabel("Date")
     plt.tight_layout()
-    plt.savefig(outpath, dpi=220)
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close()
