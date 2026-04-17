@@ -127,9 +127,20 @@ def plot_figure4_bootstrap(
 
     Path(outpath).parent.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(len(quantiles), 1, figsize=(6, 8), sharex=False)
+    fig, axes = plt.subplots(len(quantiles), 1, figsize=(6, 8), sharex=True)
     if len(quantiles) == 1:
         axes = [axes]
+
+    all_values = boot_df.loc[
+        boot_df["station_name"] == station_name, "slope_per_decade"
+    ].to_numpy(dtype=float)
+    all_values = all_values[np.isfinite(all_values)]
+    if all_values.size:
+        x_low, x_high = np.percentile(all_values, [0.5, 99.5])
+        x_span = x_high - x_low
+        x_pad = max(0.12 * x_span, 1e-6)
+    else:
+        x_low, x_high, x_pad = -1.0, 1.0, 0.0
 
     # --- رسم subplot ها ---
     for i, q in enumerate(quantiles):
@@ -181,6 +192,15 @@ def plot_figure4_bootstrap(
 
         ax.set_title(f"τ = {q}")
         ax.set_ylabel("Count")
+
+    if np.isfinite(x_low) and np.isfinite(x_high):
+        if x_high <= x_low:
+            center = float(np.median(all_values)) if all_values.size else 0.0
+            for ax in axes:
+                ax.set_xlim(center - max(x_pad, 1e-6), center + max(x_pad, 1e-6))
+        else:
+            for ax in axes:
+                ax.set_xlim(x_low - x_pad, x_high + x_pad)
 
     axes[-1].set_xlabel("Slope (°C/decade)")
 

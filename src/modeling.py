@@ -69,20 +69,70 @@ def _meboot_single(series, rng):
     return y
 
 
+def _residual_bootstrap_single(x_decades, y, rng):
+    """
+    Residual bootstrap around an OLS trend:
+    y_boot = y_hat + e*, where e* are centered residuals sampled with replacement.
+    """
+    x = np.asarray(x_decades, dtype=float)
+    y = np.asarray(y, dtype=float)
+    X = sm.add_constant(x)
+    ols = sm.OLS(y, X).fit()
+    y_hat = ols.predict(X)
+    resid = ols.resid - np.mean(ols.resid)
+    sampled_resid = rng.choice(resid, size=len(resid), replace=True)
+    return y_hat + sampled_resid
+
+
+def _moving_block_bootstrap_single(series, rng, block_length=None):
+    """
+    Moving block bootstrap for time series that preserves short-range dependence.
+    """
+    x = np.asarray(series, dtype=float)
+    n = len(x)
+    if n < 3:
+        return x.copy()
+
+    if block_length is None:
+        block_length = max(5, int(np.sqrt(n)))
+    block_length = int(np.clip(block_length, 2, n))
+
+    starts = np.arange(0, n - block_length + 1)
+    n_blocks = int(np.ceil(n / block_length))
+    pieces = []
+    for _ in range(n_blocks):
+        s = rng.choice(starts)
+        pieces.append(x[s : s + block_length])
+    out = np.concatenate(pieces)[:n]
+    return out
+
+
 def maximum_entropy_bootstrap_slopes(
     x_decades,
     y,
     quantiles,
     n_boot=200,
     random_seed=42,
+    method="meboot",
+    block_length=None,
 ):
     rng = np.random.default_rng(random_seed)
     x = np.asarray(x_decades, dtype=float)
     y = np.asarray(y, dtype=float)
+    method = str(method).lower()
+    valid_methods = {"meboot", "residual", "moving_block"}
+    if method not in valid_methods:
+        raise ValueError(f"Unknown bootstrap method '{method}'. Valid options: {sorted(valid_methods)}")
 
     rows = []
     for b in range(n_boot):
-        y_boot = _meboot_single(y, rng)
+        if method == "meboot":
+            y_boot = _meboot_single(y, rng)
+        elif method == "residual":
+            y_boot = _residual_bootstrap_single(x, y, rng)
+        else:  # moving_block
+            y_boot = _moving_block_bootstrap_single(y, rng, block_length=block_length)
+
         for q in quantiles:
             fit = quantile_fit(x, y_boot, q)
             rows.append(
@@ -90,6 +140,7 @@ def maximum_entropy_bootstrap_slopes(
                     "bootstrap_id": b,
                     "quantile": float(q),
                     "slope_per_decade": fit["slope_per_decade"],
+                    "bootstrap_method": method,
                 }
             )
     return pd.DataFrame(rows)
