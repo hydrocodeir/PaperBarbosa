@@ -96,6 +96,8 @@ def main():
             cfg["quantiles"],
             n_boot=cfg["bootstrap_samples"],
             random_seed=cfg["random_seed"],
+            method=cfg.get("bootstrap_method", "meboot"),
+            block_length=cfg.get("bootstrap_block_length"),
         )
         
         boot_df["station_name"] = station_name
@@ -107,6 +109,17 @@ def main():
             station_name,
             cfg["quantiles"],
             fig_dir / f"{station_name}_figure4.png",
+            x_mode="absolute",
+        )
+
+        plot_figure4_bootstrap(
+            boot_df,
+            fit_df,
+            station_name,
+            cfg["quantiles"],
+            fig_dir / f"{station_name}_figure4_centered.png",
+            x_mode="centered",
+            center_scale=cfg.get("bootstrap_centered_scale", 10000.0),
         )
         
 
