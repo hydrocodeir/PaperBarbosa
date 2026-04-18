@@ -35,8 +35,33 @@ The pipeline writes outputs into `outputs/`:
 - slope_summary.csv
 - quantile_grid_summary.csv
 - bootstrap_summary.csv
+- final_summary_with_ci.csv
+- homogenization_breakpoints.csv *(when homogenization is enabled)*
+- homogenization_adjustments.csv *(when homogenization is enabled)*
 - cluster_distance_matrix_tau_*.csv
 - figures/*.png
+
+## RHtests-like homogenization (SNHT)
+A practical RHtests-style step is included and can be toggled in `config.yaml`.
+
+```yaml
+homogenization:
+  enabled: true
+  method: snht
+  min_segment: 365
+  snht_threshold: 120.0
+  max_breaks: 5
+```
+
+What it does per station:
+1. Detects candidate changepoints with recursive SNHT scans.
+2. Applies mean-shift adjustment so all earlier segments align to the most recent segment mean.
+3. Saves publication-ready outputs:
+   - `outputs/tables/homogenization_breakpoints.csv`
+   - `outputs/tables/homogenization_adjustments.csv`
+   - `outputs/figures/<station>_homogenization_breaks.png`
+
+These can be inserted directly into your paper as a table/figure set similar to RHtests reporting.
 
 ## Paper-aligned defaults
 - Quantile grid follows the article setup: 0.10 to 0.90 with step 0.02.

@@ -435,3 +435,30 @@ def plot_figure2_deseasoned(date, deseasoned, time_decades, station_name, outpat
     plt.tight_layout()
     plt.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close()
+
+
+def plot_homogenization_breaks(date, raw_values, adjusted_values, break_dates, station_name, outpath):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    d = pd.to_datetime(date)
+    raw = np.asarray(raw_values, dtype=float)
+    adj = np.asarray(adjusted_values, dtype=float)
+
+    plt.figure(figsize=(12, 5))
+    plt.plot(d, raw, color="0.45", linewidth=0.8, label="Raw")
+    plt.plot(d, adj, color="black", linewidth=1.0, label="Homogenized")
+
+    for i, bd in enumerate(break_dates):
+        bd = pd.to_datetime(bd)
+        plt.axvline(bd, color="tab:red", linestyle="--", linewidth=1.0)
+        if i == 0:
+            plt.text(bd, np.nanmax(adj), " Break", color="tab:red", fontsize=8, va="top")
+
+    plt.title(f"{station_name}: RHtests-like break detection (SNHT)")
+    plt.xlabel("Date")
+    plt.ylabel("Temperature (°C)")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()
