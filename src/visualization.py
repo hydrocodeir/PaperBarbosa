@@ -435,3 +435,207 @@ def plot_figure2_deseasoned(date, deseasoned, time_decades, station_name, outpat
     plt.tight_layout()
     plt.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close()
+
+
+def plot_homogenization_breaks(date, raw_values, adjusted_values, break_dates, station_name, outpath):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    d = pd.to_datetime(date)
+    raw = np.asarray(raw_values, dtype=float)
+    adj = np.asarray(adjusted_values, dtype=float)
+
+    plt.figure(figsize=(12, 5))
+    plt.plot(d, raw, color="0.45", linewidth=0.8, label="Raw")
+    plt.plot(d, adj, color="black", linewidth=1.0, label="Homogenized")
+
+    for i, bd in enumerate(break_dates):
+        bd = pd.to_datetime(bd)
+        plt.axvline(bd, color="tab:red", linestyle="--", linewidth=1.0)
+        if i == 0:
+            plt.text(bd, np.nanmax(adj), " Break", color="tab:red", fontsize=8, va="top")
+
+    plt.title(f"{station_name}: RHtests-like break detection (SNHT)")
+    plt.xlabel("Date")
+    plt.ylabel("Temperature (°C)")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_preanalysis_heatmap(test_df, outpath):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    if test_df.empty:
+        return
+
+    cols = ["missing_ratio", "outlier_ratio", "mk_pvalue", "adf_pvalue", "ljungbox_pvalue", "normaltest_pvalue"]
+    available = [c for c in cols if c in test_df.columns]
+    mat = test_df.set_index("station_name")[available].copy()
+    mat = mat.apply(pd.to_numeric, errors="coerce")
+
+    fig_h = max(3.5, 0.45 * len(mat) + 1.6)
+    plt.figure(figsize=(10, fig_h))
+    im = plt.imshow(mat.to_numpy(), aspect="auto", cmap="viridis")
+    plt.colorbar(im, label="Value")
+    plt.xticks(range(len(available)), available, rotation=35, ha="right")
+    plt.yticks(range(len(mat.index)), mat.index)
+    plt.title("Pre-analysis diagnostics heatmap")
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_station_preanalysis_panel(date, values, station_name, outpath):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    d = pd.to_datetime(date)
+    v = np.asarray(values, dtype=float)
+    if len(d) != len(v):
+        raise ValueError(f"date/value length mismatch: {len(d)} vs {len(v)}")
+    y = pd.Series(v, index=d, dtype=float)
+    y_valid = y.dropna()
+
+    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=False)
+
+    if y_valid.empty:
+        axes[0].text(
+            0.5,
+            0.5,
+            "No valid observations after preprocessing",
+            transform=axes[0].transAxes,
+            ha="center",
+            va="center",
+            fontsize=10,
+        )
+        axes[0].set_title(f"{station_name}: pre-analysis quality panel")
+        axes[0].set_ylabel("Temperature (°C)")
+
+        axes[1].text(
+            0.5,
+            0.5,
+            "Histogram unavailable (all values are NaN)",
+            transform=axes[1].transAxes,
+            ha="center",
+            va="center",
+            fontsize=9,
+        )
+        axes[1].set_xlabel("Temperature (°C)")
+        axes[1].set_ylabel("Count")
+    else:
+        roll = y_valid.rolling(30, min_periods=10).mean()
+        axes[0].plot(y_valid.index, y_valid.to_numpy(dtype=float), color="0.55", linewidth=0.7, label="Daily")
+        axes[0].plot(roll.index, roll.to_numpy(dtype=float), color="black", linewidth=1.2, label="30-day mean")
+        axes[0].set_title(f"{station_name}: pre-analysis quality panel")
+        axes[0].set_ylabel("Temperature (°C)")
+        axes[0].legend()
+
+        yy = y_valid.to_numpy(dtype=float)
+        bins = min(35, max(10, int(np.sqrt(yy.size))))
+        axes[1].hist(yy, bins=bins, color="gray", edgecolor="black")
+        axes[1].set_xlabel("Temperature (°C)")
+        axes[1].set_ylabel("Count")
+
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_q1_forest(q1_table_df, outpath, top_n=20):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    if q1_table_df.empty:
+        return
+
+    df = q1_table_df.copy().sort_values("q1_priority_score", ascending=False).head(int(top_n)).copy()
+    df = df.iloc[::-1]  # top row at top of plot
+
+    y = np.arange(len(df))
+    x = pd.to_numeric(df["slope_per_decade"], errors="coerce").to_numpy(dtype=float)
+    lo = pd.to_numeric(df["ci_2_5"], errors="coerce").to_numpy(dtype=float)
+    hi = pd.to_numeric(df["ci_97_5"], errors="coerce").to_numpy(dtype=float)
+
+    err_left = np.maximum(x - lo, 0)
+    err_right = np.maximum(hi - x, 0)
+
+    colors = np.where(df["trend_significant"].fillna(0).astype(int).to_numpy() == 1, "black", "0.6")
+
+    plt.figure(figsize=(9, max(4.5, 0.35 * len(df) + 1.5)))
+    for i in range(len(df)):
+        plt.errorbar(
+            x[i],
+            y[i],
+            xerr=np.array([[err_left[i]], [err_right[i]]]),
+            fmt="o",
+            color=colors[i],
+            ecolor=colors[i],
+            capsize=3,
+            markersize=4.5,
+        )
+
+    plt.axvline(0, linestyle="--", linewidth=1.0, color="tab:red")
+    plt.yticks(y, df["station_name"].tolist())
+    plt.xlabel("Median trend slope (°C/decade), with 95% bootstrap CI")
+    plt.title("Q1-ready station trend forest plot (Top priority stations)")
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_q1_trend_break_scatter(q1_table_df, outpath):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    if q1_table_df.empty:
+        return
+
+    df = q1_table_df.copy()
+    x = pd.to_numeric(df["n_breaks"], errors="coerce").to_numpy(dtype=float)
+    y = pd.to_numeric(df["slope_per_decade"], errors="coerce").abs().to_numpy(dtype=float)
+    sig = df.get("trend_significant", pd.Series([0] * len(df))).fillna(0).astype(int).to_numpy()
+
+    plt.figure(figsize=(7.2, 5.2))
+    plt.scatter(x, y, c=np.where(sig == 1, "black", "0.6"), s=36, alpha=0.9)
+    for _, r in df.nlargest(min(8, len(df)), "q1_priority_score").iterrows():
+        plt.text(float(r["n_breaks"]) + 0.03, abs(float(r["slope_per_decade"])) + 0.003, str(r["station_name"]), fontsize=8)
+
+    plt.xlabel("Number of detected homogenization breakpoints")
+    plt.ylabel("|Median trend slope| (°C/decade)")
+    plt.title("Q1 trend-vs-break complexity map")
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_q1_taylor_like(metrics_df, outpath):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    if metrics_df.empty:
+        return
+
+    df = metrics_df.copy()
+    x = pd.to_numeric(df["boot_std"], errors="coerce").to_numpy(dtype=float)
+    y = pd.to_numeric(df["slope_per_decade"], errors="coerce").abs().to_numpy(dtype=float)
+    c = pd.to_numeric(df.get("ci_width", np.nan), errors="coerce").to_numpy(dtype=float)
+
+    plt.figure(figsize=(7.2, 5.2))
+    sc = plt.scatter(x, y, c=c, cmap="viridis", s=44, alpha=0.9, edgecolor="black", linewidth=0.25)
+    plt.colorbar(sc, label="CI width (°C/decade)")
+    plt.xlabel("Bootstrap slope std (uncertainty)")
+    plt.ylabel("|Median trend slope| (signal)")
+    plt.title("Q1 Taylor-like signal-vs-uncertainty panel")
+
+    # annotate a few most uncertain stations
+    tmp = df.copy()
+    tmp["ci_width"] = pd.to_numeric(tmp["ci_width"], errors="coerce")
+    for _, r in tmp.nlargest(min(6, len(tmp)), "ci_width").iterrows():
+        plt.text(float(r["boot_std"]) + 0.001, abs(float(r["slope_per_decade"])) + 0.003, str(r["station_name"]), fontsize=8)
+
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()
