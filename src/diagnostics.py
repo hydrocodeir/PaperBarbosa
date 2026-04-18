@@ -33,7 +33,10 @@ def run_preanalysis_tests(
     - global quality flag
     """
     d = pd.to_datetime(date)
-    s = pd.Series(values, index=d, dtype=float)
+    v = np.asarray(values, dtype=float)
+    if len(d) != len(v):
+        raise ValueError(f"date/value length mismatch: {len(d)} vs {len(v)}")
+    s = pd.Series(v, index=d, dtype=float)
 
     n_total = int(len(s))
     n_valid = int(s.notna().sum())

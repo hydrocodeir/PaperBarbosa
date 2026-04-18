@@ -493,7 +493,10 @@ def plot_station_preanalysis_panel(date, values, station_name, outpath):
     set_publication_style()
 
     d = pd.to_datetime(date)
-    y = pd.Series(values, index=d, dtype=float)
+    v = np.asarray(values, dtype=float)
+    if len(d) != len(v):
+        raise ValueError(f"date/value length mismatch: {len(d)} vs {len(v)}")
+    y = pd.Series(v, index=d, dtype=float)
     y_valid = y.dropna()
 
     fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=False)

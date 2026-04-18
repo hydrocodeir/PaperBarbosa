@@ -5,6 +5,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 import pandas as pd
 
 from src.preprocessing import load_data, fill_tmean, prepare_station_series, run_input_precheck
+from src.diagnostics import run_preanalysis_tests
 
 
 def test_load_data_semicolon_and_aliases(tmp_path):
@@ -56,3 +57,12 @@ def test_coerce_persian_digits_and_unicode_minus(tmp_path):
     assert vals[0] == 4.4
     assert vals[1] == -1.5
     assert vals[2] == 3.2
+
+
+def test_run_preanalysis_tests_series_alignment_bugfix():
+    # values passed as Series (index 0..n-1) should not be reindexed to NaN against datetime index
+    date = pd.date_range("2022-01-01", periods=5, freq="D")
+    values = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0])
+    out = run_preanalysis_tests(date, values, "S1")
+    assert int(out["n_valid"].iloc[0]) == 5
+    assert float(out["missing_ratio"].iloc[0]) == 0.0
