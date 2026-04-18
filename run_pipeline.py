@@ -11,6 +11,7 @@ from src.preprocessing import (
     filter_station_coverage,
 )
 from src.feature_engineering import deseasonalize, decade_index
+from src.homogenization import detect_breakpoints_snht, mean_shift_adjustment
 from src.modeling import fit_quantiles, maximum_entropy_bootstrap_slopes
 from src.evaluation import summarize_bootstrap, merge_fit_and_bootstrap
 from src.clustering import distance_matrix_from_bootstrap, linkage_from_distance_matrix
@@ -23,6 +24,7 @@ from src.visualization import (
     plot_figure3_quantile_slopes,
     plot_figure4_bootstrap,
     plot_figure1_station_map,
+    plot_homogenization_breaks,
 )
 
 
@@ -34,6 +36,46 @@ def process_single_station(station_name, sub, cfg, fig_dir):
         max_gap=cfg["max_interp_gap"],
         outlier_sigma=cfg["outlier_sigma"],
     )
+
+    hom_cfg = cfg.get("homogenization", {})
+    use_hom = bool(hom_cfg.get("enabled", False))
+
+    break_rows = []
+    adjust_rows = []
+    if use_hom:
+        breaks = detect_breakpoints_snht(
+            sub[target].to_numpy(),
+            min_segment=hom_cfg.get("min_segment", 365),
+            threshold=hom_cfg.get("snht_threshold", 120.0),
+            max_breaks=hom_cfg.get("max_breaks", 5),
+        )
+        break_indices = [b[0] for b in breaks]
+        sub[f"{target}_raw"] = sub[target].to_numpy(dtype=float)
+        homogenized, adjust_df = mean_shift_adjustment(sub[target].to_numpy(), break_indices)
+        sub[target] = homogenized
+
+        for b_idx, score in breaks:
+            break_rows.append(
+                {
+                    "station_name": station_name,
+                    "break_index": int(b_idx),
+                    "break_date": pd.Timestamp(sub["date"].iloc[int(b_idx)]),
+                    "snht_score": float(score),
+                }
+            )
+
+        if not adjust_df.empty:
+            adjust_df["station_name"] = station_name
+            adjust_rows = adjust_df.to_dict("records")
+
+        plot_homogenization_breaks(
+            sub["date"],
+            sub[f"{target}_raw"],
+            sub[target],
+            [sub["date"].iloc[i] for i in break_indices],
+            station_name,
+            fig_dir / f"{station_name}_homogenization_breaks.png",
+        )
 
     anomaly, seasonal, _ = deseasonalize(
         sub[target].to_numpy(),
@@ -106,7 +148,7 @@ def process_single_station(station_name, sub, cfg, fig_dir):
     for q in cfg["quantiles"]:
         plot_bootstrap_hist(boot_df, station_name, q, fig_dir / f"{station_name}_bootstrap_q{q}.png")
 
-    return sub, fit_df, grid_df, boot_df
+    return sub, fit_df, grid_df, boot_df, break_rows, adjust_rows
 
 
 def main():
@@ -151,13 +193,17 @@ def main():
     grid_rows = []
     boot_rows = []
     cleaned_rows = []
+    break_rows_all = []
+    adjust_rows_all = []
 
     for station_name, sub in df.groupby(station_col):
-        sub, fit_df, grid_df, boot_df = process_single_station(station_name, sub, cfg, fig_dir)
+        sub, fit_df, grid_df, boot_df, break_rows, adjust_rows = process_single_station(station_name, sub, cfg, fig_dir)
         cleaned_rows.append(sub)
         fit_rows.append(fit_df)
         grid_rows.append(grid_df)
         boot_rows.append(boot_df)
+        break_rows_all.extend(break_rows)
+        adjust_rows_all.extend(adjust_rows)
 
     cleaned_df = pd.concat(cleaned_rows, ignore_index=True)
     fit_df = pd.concat(fit_rows, ignore_index=True)
@@ -173,6 +219,11 @@ def main():
     boot_df.to_csv(table_dir / "bootstrap_slopes.csv", index=False)
     boot_summary.to_csv(table_dir / "bootstrap_summary.csv", index=False)
     final_summary.to_csv(table_dir / "final_summary_with_ci.csv", index=False)
+
+    if break_rows_all:
+        pd.DataFrame(break_rows_all).to_csv(table_dir / "homogenization_breakpoints.csv", index=False)
+    if adjust_rows_all:
+        pd.DataFrame(adjust_rows_all).to_csv(table_dir / "homogenization_adjustments.csv", index=False)
 
     # Dendrogram per quantile
     for q in cfg["quantiles"]:
