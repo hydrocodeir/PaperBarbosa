@@ -9,8 +9,11 @@ from src.preprocessing import (
     fill_tmean,
     prepare_station_series,
     filter_station_coverage,
+    run_input_precheck,
 )
 from src.feature_engineering import deseasonalize, decade_index
+from src.homogenization import detect_breakpoints_snht, mean_shift_adjustment
+from src.diagnostics import run_preanalysis_tests, summarize_preanalysis, build_preanalysis_publication_table
 from src.modeling import fit_quantiles, maximum_entropy_bootstrap_slopes
 from src.evaluation import summarize_bootstrap, merge_fit_and_bootstrap
 from src.clustering import distance_matrix_from_bootstrap, linkage_from_distance_matrix
@@ -23,6 +26,9 @@ from src.visualization import (
     plot_figure3_quantile_slopes,
     plot_figure4_bootstrap,
     plot_figure1_station_map,
+    plot_homogenization_breaks,
+    plot_preanalysis_heatmap,
+    plot_station_preanalysis_panel,
 )
 
 
@@ -33,6 +39,62 @@ def process_single_station(station_name, sub, cfg, fig_dir):
         target_variable=target,
         max_gap=cfg["max_interp_gap"],
         outlier_sigma=cfg["outlier_sigma"],
+    )
+
+    hom_cfg = cfg.get("homogenization", {})
+    use_hom = bool(hom_cfg.get("enabled", False))
+
+    break_rows = []
+    adjust_rows = []
+    if use_hom:
+        breaks = detect_breakpoints_snht(
+            sub[target].to_numpy(),
+            min_segment=hom_cfg.get("min_segment", 365),
+            threshold=hom_cfg.get("snht_threshold", 120.0),
+            max_breaks=hom_cfg.get("max_breaks", 5),
+        )
+        break_indices = [b[0] for b in breaks]
+        sub[f"{target}_raw"] = sub[target].to_numpy(dtype=float)
+        homogenized, adjust_df = mean_shift_adjustment(sub[target].to_numpy(), break_indices)
+        sub[target] = homogenized
+
+        for b_idx, score in breaks:
+            break_rows.append(
+                {
+                    "station_name": station_name,
+                    "break_index": int(b_idx),
+                    "break_date": pd.Timestamp(sub["date"].iloc[int(b_idx)]),
+                    "snht_score": float(score),
+                }
+            )
+
+        if not adjust_df.empty:
+            adjust_df["station_name"] = station_name
+            adjust_rows = adjust_df.to_dict("records")
+
+        plot_homogenization_breaks(
+            sub["date"],
+            sub[f"{target}_raw"],
+            sub[target],
+            [sub["date"].iloc[i] for i in break_indices],
+            station_name,
+            fig_dir / f"{station_name}_homogenization_breaks.png",
+        )
+
+    diag_cfg = cfg.get("diagnostics", {})
+    diag_df = run_preanalysis_tests(
+        sub["date"],
+        sub[target],
+        station_name,
+        missing_ratio_threshold=diag_cfg.get("max_missing_ratio", 0.05),
+        outlier_sigma=diag_cfg.get("outlier_sigma", 4.0),
+        ljungbox_lag=diag_cfg.get("ljungbox_lag", 30),
+    )
+    plot_station_preanalysis_panel(
+        sub["date"],
+        sub[target],
+        station_name,
+        fig_dir / f"{station_name}_preanalysis_panel.png",
     )
 
     anomaly, seasonal, _ = deseasonalize(
@@ -106,7 +168,7 @@ def process_single_station(station_name, sub, cfg, fig_dir):
     for q in cfg["quantiles"]:
         plot_bootstrap_hist(boot_df, station_name, q, fig_dir / f"{station_name}_bootstrap_q{q}.png")
 
-    return sub, fit_df, grid_df, boot_df
+    return sub, fit_df, grid_df, boot_df, break_rows, adjust_rows, diag_df
 
 
 def main():
@@ -135,6 +197,19 @@ def main():
 
     df = load_data(cfg["data_path"], cfg["date_cols"])
     df = fill_tmean(df)
+
+    precheck_cfg = cfg.get("precheck", {})
+    precheck_df = run_input_precheck(
+        df,
+        station_col=cfg.get("station_col", "station_name"),
+        target_col=cfg.get("target_variable", "tmean"),
+        date_col="date",
+    )
+    precheck_df.to_csv(table_dir / "precheck_input_report.csv", index=False)
+    if bool(precheck_cfg.get("stop_on_fail", True)) and str(precheck_df["status"].iloc[0]).upper() == "FAIL":
+        raise ValueError(
+            "Input precheck failed. See outputs/tables/precheck_input_report.csv for details."
+        )
     df = filter_station_coverage(
         df,
         station_col=cfg["station_col"],
@@ -151,18 +226,25 @@ def main():
     grid_rows = []
     boot_rows = []
     cleaned_rows = []
+    break_rows_all = []
+    adjust_rows_all = []
+    diagnostics_rows = []
 
     for station_name, sub in df.groupby(station_col):
-        sub, fit_df, grid_df, boot_df = process_single_station(station_name, sub, cfg, fig_dir)
+        sub, fit_df, grid_df, boot_df, break_rows, adjust_rows, diag_df = process_single_station(station_name, sub, cfg, fig_dir)
         cleaned_rows.append(sub)
         fit_rows.append(fit_df)
         grid_rows.append(grid_df)
         boot_rows.append(boot_df)
+        break_rows_all.extend(break_rows)
+        adjust_rows_all.extend(adjust_rows)
+        diagnostics_rows.append(diag_df)
 
     cleaned_df = pd.concat(cleaned_rows, ignore_index=True)
     fit_df = pd.concat(fit_rows, ignore_index=True)
     grid_df = pd.concat(grid_rows, ignore_index=True)
     boot_df = pd.concat(boot_rows, ignore_index=True)
+    diagnostics_df = pd.concat(diagnostics_rows, ignore_index=True)
 
     boot_summary = summarize_bootstrap(boot_df)
     final_summary = merge_fit_and_bootstrap(fit_df, boot_summary)
@@ -173,6 +255,16 @@ def main():
     boot_df.to_csv(table_dir / "bootstrap_slopes.csv", index=False)
     boot_summary.to_csv(table_dir / "bootstrap_summary.csv", index=False)
     final_summary.to_csv(table_dir / "final_summary_with_ci.csv", index=False)
+
+    diagnostics_df.to_csv(table_dir / "preanalysis_station_tests.csv", index=False)
+    summarize_preanalysis(diagnostics_df).to_csv(table_dir / "preanalysis_summary.csv", index=False)
+    build_preanalysis_publication_table(diagnostics_df).to_csv(table_dir / "preanalysis_publication_table.csv", index=False)
+    plot_preanalysis_heatmap(diagnostics_df, fig_dir / "preanalysis_heatmap.png")
+
+    if break_rows_all:
+        pd.DataFrame(break_rows_all).to_csv(table_dir / "homogenization_breakpoints.csv", index=False)
+    if adjust_rows_all:
+        pd.DataFrame(adjust_rows_all).to_csv(table_dir / "homogenization_adjustments.csv", index=False)
 
     # Dendrogram per quantile
     for q in cfg["quantiles"]:
