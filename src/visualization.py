@@ -542,3 +542,100 @@ def plot_station_preanalysis_panel(date, values, station_name, outpath):
     plt.tight_layout()
     plt.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close()
+
+
+def plot_q1_forest(q1_table_df, outpath, top_n=20):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    if q1_table_df.empty:
+        return
+
+    df = q1_table_df.copy().sort_values("q1_priority_score", ascending=False).head(int(top_n)).copy()
+    df = df.iloc[::-1]  # top row at top of plot
+
+    y = np.arange(len(df))
+    x = pd.to_numeric(df["slope_per_decade"], errors="coerce").to_numpy(dtype=float)
+    lo = pd.to_numeric(df["ci_2_5"], errors="coerce").to_numpy(dtype=float)
+    hi = pd.to_numeric(df["ci_97_5"], errors="coerce").to_numpy(dtype=float)
+
+    err_left = np.maximum(x - lo, 0)
+    err_right = np.maximum(hi - x, 0)
+
+    colors = np.where(df["trend_significant"].fillna(0).astype(int).to_numpy() == 1, "black", "0.6")
+
+    plt.figure(figsize=(9, max(4.5, 0.35 * len(df) + 1.5)))
+    for i in range(len(df)):
+        plt.errorbar(
+            x[i],
+            y[i],
+            xerr=np.array([[err_left[i]], [err_right[i]]]),
+            fmt="o",
+            color=colors[i],
+            ecolor=colors[i],
+            capsize=3,
+            markersize=4.5,
+        )
+
+    plt.axvline(0, linestyle="--", linewidth=1.0, color="tab:red")
+    plt.yticks(y, df["station_name"].tolist())
+    plt.xlabel("Median trend slope (°C/decade), with 95% bootstrap CI")
+    plt.title("Q1-ready station trend forest plot (Top priority stations)")
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_q1_trend_break_scatter(q1_table_df, outpath):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    if q1_table_df.empty:
+        return
+
+    df = q1_table_df.copy()
+    x = pd.to_numeric(df["n_breaks"], errors="coerce").to_numpy(dtype=float)
+    y = pd.to_numeric(df["slope_per_decade"], errors="coerce").abs().to_numpy(dtype=float)
+    sig = df.get("trend_significant", pd.Series([0] * len(df))).fillna(0).astype(int).to_numpy()
+
+    plt.figure(figsize=(7.2, 5.2))
+    plt.scatter(x, y, c=np.where(sig == 1, "black", "0.6"), s=36, alpha=0.9)
+    for _, r in df.nlargest(min(8, len(df)), "q1_priority_score").iterrows():
+        plt.text(float(r["n_breaks"]) + 0.03, abs(float(r["slope_per_decade"])) + 0.003, str(r["station_name"]), fontsize=8)
+
+    plt.xlabel("Number of detected homogenization breakpoints")
+    plt.ylabel("|Median trend slope| (°C/decade)")
+    plt.title("Q1 trend-vs-break complexity map")
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_q1_taylor_like(metrics_df, outpath):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    if metrics_df.empty:
+        return
+
+    df = metrics_df.copy()
+    x = pd.to_numeric(df["boot_std"], errors="coerce").to_numpy(dtype=float)
+    y = pd.to_numeric(df["slope_per_decade"], errors="coerce").abs().to_numpy(dtype=float)
+    c = pd.to_numeric(df.get("ci_width", np.nan), errors="coerce").to_numpy(dtype=float)
+
+    plt.figure(figsize=(7.2, 5.2))
+    sc = plt.scatter(x, y, c=c, cmap="viridis", s=44, alpha=0.9, edgecolor="black", linewidth=0.25)
+    plt.colorbar(sc, label="CI width (°C/decade)")
+    plt.xlabel("Bootstrap slope std (uncertainty)")
+    plt.ylabel("|Median trend slope| (signal)")
+    plt.title("Q1 Taylor-like signal-vs-uncertainty panel")
+
+    # annotate a few most uncertain stations
+    tmp = df.copy()
+    tmp["ci_width"] = pd.to_numeric(tmp["ci_width"], errors="coerce")
+    for _, r in tmp.nlargest(min(6, len(tmp)), "ci_width").iterrows():
+        plt.text(float(r["boot_std"]) + 0.001, abs(float(r["slope_per_decade"])) + 0.003, str(r["station_name"]), fontsize=8)
+
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()

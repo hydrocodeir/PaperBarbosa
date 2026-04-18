@@ -49,6 +49,8 @@ The pipeline writes outputs into `outputs/`:
 - preanalysis_station_tests.csv *(Q1 pre-analysis checks)*
 - preanalysis_summary.csv *(Q1 pre-analysis aggregated stats)*
 - preanalysis_publication_table.csv *(manuscript-ready diagnostic table)*
+- q1_station_rankings.csv *(Q1 discussion-priority table based on trend+CI+QC+breaks)*
+- q1_taylor_metrics.csv *(signal-vs-uncertainty metrics for Q1 panel)*
 - homogenization_breakpoints.csv *(when homogenization is enabled)*
 - homogenization_adjustments.csv *(when homogenization is enabled)*
 - cluster_distance_matrix_tau_*.csv
@@ -129,3 +131,18 @@ precheck:
   stop_on_fail: true
 ```
 If `stop_on_fail=true` and status is `FAIL`, the pipeline stops early with a clear error message.
+
+
+## Q1 manuscript figure/table add-on
+A publication-oriented ranking artifact is now generated:
+- Table: `outputs/tables/q1_station_rankings.csv`
+- Figure: `outputs/figures/q1_forest_top_stations.png`
+- Figure: `outputs/figures/q1_trend_vs_breaks.png`
+- Figure: `outputs/figures/q1_taylor_like_panel.png`
+
+Design intent:
+- Focuses on median trend (`quantile=0.5`)
+- Shows slope and 95% bootstrap CI
+- Includes QC state (`quality_pass`, `reason_code`)
+- Includes homogenization complexity (`n_breaks`)
+- Adds `q1_priority_score` to prioritize stations for Results/Discussion sections

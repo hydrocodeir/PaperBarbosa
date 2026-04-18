@@ -18,6 +18,7 @@ from src.diagnostics import run_preanalysis_tests, summarize_preanalysis, build_
 from src.modeling import fit_quantiles, maximum_entropy_bootstrap_slopes
 from src.evaluation import summarize_bootstrap, merge_fit_and_bootstrap
 from src.clustering import distance_matrix_from_bootstrap, linkage_from_distance_matrix
+from src.reporting import build_q1_station_table, build_q1_taylor_metrics
 from src.visualization import (
     plot_station_timeseries,
     plot_quantile_grid,
@@ -30,6 +31,9 @@ from src.visualization import (
     plot_homogenization_breaks,
     plot_preanalysis_heatmap,
     plot_station_preanalysis_panel,
+    plot_q1_forest,
+    plot_q1_trend_break_scatter,
+    plot_q1_taylor_like,
 )
 
 
@@ -274,10 +278,25 @@ def main():
     build_preanalysis_publication_table(diagnostics_df).to_csv(table_dir / "preanalysis_publication_table.csv", index=False)
     plot_preanalysis_heatmap(diagnostics_df, fig_dir / "preanalysis_heatmap.png")
 
+    breakpoints_df = pd.DataFrame(break_rows_all) if break_rows_all else pd.DataFrame(columns=["station_name"])
     if break_rows_all:
-        pd.DataFrame(break_rows_all).to_csv(table_dir / "homogenization_breakpoints.csv", index=False)
+        breakpoints_df.to_csv(table_dir / "homogenization_breakpoints.csv", index=False)
     if adjust_rows_all:
         pd.DataFrame(adjust_rows_all).to_csv(table_dir / "homogenization_adjustments.csv", index=False)
+
+    q1_table = build_q1_station_table(
+        final_summary,
+        diagnostics_df,
+        breakpoints_df=breakpoints_df,
+        focus_quantile=0.5,
+    )
+    q1_table.to_csv(table_dir / "q1_station_rankings.csv", index=False)
+    plot_q1_forest(q1_table, fig_dir / "q1_forest_top_stations.png", top_n=20)
+    plot_q1_trend_break_scatter(q1_table, fig_dir / "q1_trend_vs_breaks.png")
+
+    q1_taylor = build_q1_taylor_metrics(final_summary, diagnostics_df, focus_quantile=0.5)
+    q1_taylor.to_csv(table_dir / "q1_taylor_metrics.csv", index=False)
+    plot_q1_taylor_like(q1_taylor, fig_dir / "q1_taylor_like_panel.png")
 
     # Dendrogram per quantile
     for q in cfg["quantiles"]:
