@@ -24,3 +24,8 @@ homogenization:
   min_segment: 365
   snht_threshold: 120.0
   max_breaks: 5
+
+diagnostics:
+  max_missing_ratio: 0.05
+  outlier_sigma: 4.0
+  ljungbox_lag: 30

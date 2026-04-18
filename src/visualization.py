@@ -462,3 +462,53 @@ def plot_homogenization_breaks(date, raw_values, adjusted_values, break_dates, s
     plt.tight_layout()
     plt.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close()
+
+
+def plot_preanalysis_heatmap(test_df, outpath):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    if test_df.empty:
+        return
+
+    cols = ["missing_ratio", "outlier_ratio", "mk_pvalue", "adf_pvalue", "ljungbox_pvalue", "normaltest_pvalue"]
+    available = [c for c in cols if c in test_df.columns]
+    mat = test_df.set_index("station_name")[available].copy()
+    mat = mat.apply(pd.to_numeric, errors="coerce")
+
+    fig_h = max(3.5, 0.45 * len(mat) + 1.6)
+    plt.figure(figsize=(10, fig_h))
+    im = plt.imshow(mat.to_numpy(), aspect="auto", cmap="viridis")
+    plt.colorbar(im, label="Value")
+    plt.xticks(range(len(available)), available, rotation=35, ha="right")
+    plt.yticks(range(len(mat.index)), mat.index)
+    plt.title("Pre-analysis diagnostics heatmap")
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def plot_station_preanalysis_panel(date, values, station_name, outpath):
+    ensure_dir(Path(outpath).parent)
+    set_publication_style()
+
+    d = pd.to_datetime(date)
+    y = pd.Series(values, index=d, dtype=float)
+    roll = y.rolling(30, min_periods=10).mean()
+
+    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=False)
+
+    axes[0].plot(d, y, color="0.55", linewidth=0.7, label="Daily")
+    axes[0].plot(d, roll, color="black", linewidth=1.2, label="30-day mean")
+    axes[0].set_title(f"{station_name}: pre-analysis quality panel")
+    axes[0].set_ylabel("Temperature (°C)")
+    axes[0].legend()
+
+    yy = y.dropna().to_numpy(dtype=float)
+    axes[1].hist(yy, bins=35, color="gray", edgecolor="black")
+    axes[1].set_xlabel("Temperature (°C)")
+    axes[1].set_ylabel("Count")
+
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=300, bbox_inches="tight")
+    plt.close()

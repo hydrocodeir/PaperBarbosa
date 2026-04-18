@@ -12,6 +12,7 @@ from src.preprocessing import (
 )
 from src.feature_engineering import deseasonalize, decade_index
 from src.homogenization import detect_breakpoints_snht, mean_shift_adjustment
+from src.diagnostics import run_preanalysis_tests, summarize_preanalysis
 from src.modeling import fit_quantiles, maximum_entropy_bootstrap_slopes
 from src.evaluation import summarize_bootstrap, merge_fit_and_bootstrap
 from src.clustering import distance_matrix_from_bootstrap, linkage_from_distance_matrix
@@ -25,6 +26,8 @@ from src.visualization import (
     plot_figure4_bootstrap,
     plot_figure1_station_map,
     plot_homogenization_breaks,
+    plot_preanalysis_heatmap,
+    plot_station_preanalysis_panel,
 )
 
 
@@ -76,6 +79,22 @@ def process_single_station(station_name, sub, cfg, fig_dir):
             station_name,
             fig_dir / f"{station_name}_homogenization_breaks.png",
         )
+
+    diag_cfg = cfg.get("diagnostics", {})
+    diag_df = run_preanalysis_tests(
+        sub["date"],
+        sub[target],
+        station_name,
+        missing_ratio_threshold=diag_cfg.get("max_missing_ratio", 0.05),
+        outlier_sigma=diag_cfg.get("outlier_sigma", 4.0),
+        ljungbox_lag=diag_cfg.get("ljungbox_lag", 30),
+    )
+    plot_station_preanalysis_panel(
+        sub["date"],
+        sub[target],
+        station_name,
+        fig_dir / f"{station_name}_preanalysis_panel.png",
+    )
 
     anomaly, seasonal, _ = deseasonalize(
         sub[target].to_numpy(),
@@ -148,7 +167,7 @@ def process_single_station(station_name, sub, cfg, fig_dir):
     for q in cfg["quantiles"]:
         plot_bootstrap_hist(boot_df, station_name, q, fig_dir / f"{station_name}_bootstrap_q{q}.png")
 
-    return sub, fit_df, grid_df, boot_df, break_rows, adjust_rows
+    return sub, fit_df, grid_df, boot_df, break_rows, adjust_rows, diag_df
 
 
 def main():
@@ -195,20 +214,23 @@ def main():
     cleaned_rows = []
     break_rows_all = []
     adjust_rows_all = []
+    diagnostics_rows = []
 
     for station_name, sub in df.groupby(station_col):
-        sub, fit_df, grid_df, boot_df, break_rows, adjust_rows = process_single_station(station_name, sub, cfg, fig_dir)
+        sub, fit_df, grid_df, boot_df, break_rows, adjust_rows, diag_df = process_single_station(station_name, sub, cfg, fig_dir)
         cleaned_rows.append(sub)
         fit_rows.append(fit_df)
         grid_rows.append(grid_df)
         boot_rows.append(boot_df)
         break_rows_all.extend(break_rows)
         adjust_rows_all.extend(adjust_rows)
+        diagnostics_rows.append(diag_df)
 
     cleaned_df = pd.concat(cleaned_rows, ignore_index=True)
     fit_df = pd.concat(fit_rows, ignore_index=True)
     grid_df = pd.concat(grid_rows, ignore_index=True)
     boot_df = pd.concat(boot_rows, ignore_index=True)
+    diagnostics_df = pd.concat(diagnostics_rows, ignore_index=True)
 
     boot_summary = summarize_bootstrap(boot_df)
     final_summary = merge_fit_and_bootstrap(fit_df, boot_summary)
@@ -219,6 +241,10 @@ def main():
     boot_df.to_csv(table_dir / "bootstrap_slopes.csv", index=False)
     boot_summary.to_csv(table_dir / "bootstrap_summary.csv", index=False)
     final_summary.to_csv(table_dir / "final_summary_with_ci.csv", index=False)
+
+    diagnostics_df.to_csv(table_dir / "preanalysis_station_tests.csv", index=False)
+    summarize_preanalysis(diagnostics_df).to_csv(table_dir / "preanalysis_summary.csv", index=False)
+    plot_preanalysis_heatmap(diagnostics_df, fig_dir / "preanalysis_heatmap.png")
 
     if break_rows_all:
         pd.DataFrame(break_rows_all).to_csv(table_dir / "homogenization_breakpoints.csv", index=False)

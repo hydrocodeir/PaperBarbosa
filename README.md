@@ -36,6 +36,8 @@ The pipeline writes outputs into `outputs/`:
 - quantile_grid_summary.csv
 - bootstrap_summary.csv
 - final_summary_with_ci.csv
+- preanalysis_station_tests.csv *(Q1 pre-analysis checks)*
+- preanalysis_summary.csv *(Q1 pre-analysis aggregated stats)*
 - homogenization_breakpoints.csv *(when homogenization is enabled)*
 - homogenization_adjustments.csv *(when homogenization is enabled)*
 - cluster_distance_matrix_tau_*.csv
@@ -70,3 +72,29 @@ These can be inserted directly into your paper as a table/figure set similar to 
   - `min_start_date`
   - `max_end_date`
   - `max_missing_ratio`
+
+
+## Q1 pre-analysis test suite (before trend/quantile modeling)
+The pipeline now runs a mandatory pre-analysis diagnostic stage for each station before deseasonalization/modeling:
+
+- Completeness (`missing_ratio`)
+- Outlier rate (`outlier_ratio`)
+- Mann-Kendall trend significance (`mk_tau`, `mk_pvalue`)
+- ADF stationarity test (`adf_pvalue`)
+- Ljung-Box autocorrelation test (`ljungbox_pvalue`)
+- D’Agostino normality test (`normaltest_pvalue`)
+
+Outputs for paper reporting:
+- `outputs/tables/preanalysis_station_tests.csv`
+- `outputs/tables/preanalysis_summary.csv`
+- `outputs/figures/preanalysis_heatmap.png`
+- `outputs/figures/<station>_preanalysis_panel.png`
+
+You can tune thresholds in `config.yaml`:
+
+```yaml
+diagnostics:
+  max_missing_ratio: 0.05
+  outlier_sigma: 4.0
+  ljungbox_lag: 30
+```
