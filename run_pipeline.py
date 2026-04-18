@@ -10,6 +10,7 @@ from src.preprocessing import (
     prepare_station_series,
     filter_station_coverage,
     run_input_precheck,
+    summarize_preprocess_health,
 )
 from src.feature_engineering import deseasonalize, decade_index
 from src.homogenization import detect_breakpoints_snht, mean_shift_adjustment
@@ -210,6 +211,13 @@ def main():
         raise ValueError(
             "Input precheck failed. See outputs/tables/precheck_input_report.csv for details."
         )
+
+    summarize_preprocess_health(
+        df,
+        station_col=cfg.get("station_col", "station_name"),
+        target_col=cfg.get("target_variable", "tmean"),
+    ).to_csv(table_dir / "preprocess_health_before_station_processing.csv", index=False)
+
     df = filter_station_coverage(
         df,
         station_col=cfg["station_col"],
@@ -250,6 +258,11 @@ def main():
     final_summary = merge_fit_and_bootstrap(fit_df, boot_summary)
 
     cleaned_df.to_csv(table_dir / "cleaned_station_data.csv", index=False)
+    summarize_preprocess_health(
+        cleaned_df,
+        station_col=cfg.get("station_col", "station_name"),
+        target_col=cfg.get("target_variable", "tmean"),
+    ).to_csv(table_dir / "preprocess_health_after_station_processing.csv", index=False)
     fit_df.to_csv(table_dir / "slope_summary.csv", index=False)
     grid_df.to_csv(table_dir / "quantile_grid_summary.csv", index=False)
     boot_df.to_csv(table_dir / "bootstrap_slopes.csv", index=False)

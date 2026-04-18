@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import re
 
 
 COLUMN_ALIASES = {
@@ -34,10 +35,37 @@ def _find_first_present(df, candidates):
     return None
 
 
+def _normalize_numeric_text(value):
+    if pd.isna(value):
+        return np.nan
+    s = str(value).strip()
+    if not s:
+        return np.nan
+
+    # Persian/Arabic digits -> ASCII
+    trans = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+    s = s.translate(trans)
+
+    # normalize decimal/thousand/minus variants
+    s = (
+        s.replace("٫", ".")
+        .replace("،", ".")
+        .replace(",", ".")
+        .replace("−", "-")
+        .replace("–", "-")
+        .replace("—", "-")
+    )
+
+    # keep only numeric-relevant chars
+    s = re.sub(r"[^0-9eE+\-\.]", "", s)
+    if s in {"", ".", "-", "+"}:
+        return np.nan
+    return s
+
+
 def _coerce_numeric(series):
-    s = series.astype(str).str.replace(",", ".", regex=False).str.strip()
-    s = s.replace({"": np.nan, "nan": np.nan, "None": np.nan})
-    return pd.to_numeric(s, errors="coerce")
+    normalized = series.map(_normalize_numeric_text)
+    return pd.to_numeric(normalized, errors="coerce")
 
 
 def load_data(path, date_cols):
@@ -206,3 +234,23 @@ def run_input_precheck(df, station_col="station_name", target_col="tmean", date_
             "target_missing_ratio": target_missing_ratio,
         }
     ])
+
+
+def summarize_preprocess_health(df, station_col="station_name", target_col="tmean"):
+    rows = []
+    if station_col not in df.columns or target_col not in df.columns:
+        return pd.DataFrame(columns=["station_name", "n_rows", "n_valid_target", "missing_ratio_target"])
+
+    for sid, sub in df.groupby(station_col):
+        n = int(len(sub))
+        valid = int(pd.to_numeric(sub[target_col], errors="coerce").notna().sum())
+        miss = 1.0 - (valid / max(n, 1))
+        rows.append(
+            {
+                "station_name": sid,
+                "n_rows": n,
+                "n_valid_target": valid,
+                "missing_ratio_target": miss,
+            }
+        )
+    return pd.DataFrame(rows)

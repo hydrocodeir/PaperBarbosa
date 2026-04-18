@@ -36,3 +36,23 @@ def test_precheck_detects_single_column_failure():
     rep = run_input_precheck(raw)
     assert rep["status"].iloc[0] == "FAIL"
     assert "BAD_DELIMITER_OR_SINGLE_COLUMN" in rep["issues"].iloc[0]
+
+
+def test_coerce_persian_digits_and_unicode_minus(tmp_path):
+    df = pd.DataFrame(
+        {
+            "station_name": ["Arak", "Arak", "Arak"],
+            "year": [2022, 2022, 2022],
+            "month": [1, 1, 1],
+            "day": [1, 2, 3],
+            "tmean": ["۴٫۴", "−۱٫۵", "3,2"],
+        }
+    )
+    p = tmp_path / "unicode_digits.csv"
+    df.to_csv(p, index=False)
+
+    loaded = load_data(str(p), ["year", "month", "day"])
+    vals = loaded["tmean"].to_numpy()
+    assert vals[0] == 4.4
+    assert vals[1] == -1.5
+    assert vals[2] == 3.2

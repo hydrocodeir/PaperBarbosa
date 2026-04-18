@@ -26,7 +26,7 @@ Expected columns:
 ### Input robustness notes
 - Column names are now matched case-insensitively for `year/month/day`, station id/name, and temperature fields.
 - Common aliases are auto-mapped (e.g., `Temperature`, `TAVG`, `tas` -> `tmean`; `TX` -> `tmax`; `TN` -> `tmin`).
-- Numeric temperature strings with comma decimals are auto-converted (e.g., `23,5` -> `23.5`).
+- Numeric temperature strings are aggressively normalized (comma/Arabic decimal, Unicode minus, Persian/Arabic digits).
 - Delimiter is auto-detected for CSV files (comma/semicolon/tab), and Excel files (`.xlsx/.xls`) are supported directly.
 - If `target_variable` is not found after normalization, pipeline now raises a clear error instead of silently producing all-NaN station series.
 
@@ -44,6 +44,8 @@ The pipeline writes outputs into `outputs/`:
 - bootstrap_summary.csv
 - final_summary_with_ci.csv
 - precheck_input_report.csv *(input schema/health gate before station processing)*
+- preprocess_health_before_station_processing.csv *(station-wise valid target count right after load)*
+- preprocess_health_after_station_processing.csv *(station-wise valid target count after station preprocessing)*
 - preanalysis_station_tests.csv *(Q1 pre-analysis checks)*
 - preanalysis_summary.csv *(Q1 pre-analysis aggregated stats)*
 - preanalysis_publication_table.csv *(manuscript-ready diagnostic table)*
