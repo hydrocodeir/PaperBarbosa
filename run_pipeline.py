@@ -12,7 +12,7 @@ from src.preprocessing import (
 )
 from src.feature_engineering import deseasonalize, decade_index
 from src.homogenization import detect_breakpoints_snht, mean_shift_adjustment
-from src.diagnostics import run_preanalysis_tests, summarize_preanalysis
+from src.diagnostics import run_preanalysis_tests, summarize_preanalysis, build_preanalysis_publication_table
 from src.modeling import fit_quantiles, maximum_entropy_bootstrap_slopes
 from src.evaluation import summarize_bootstrap, merge_fit_and_bootstrap
 from src.clustering import distance_matrix_from_bootstrap, linkage_from_distance_matrix
@@ -244,6 +244,7 @@ def main():
 
     diagnostics_df.to_csv(table_dir / "preanalysis_station_tests.csv", index=False)
     summarize_preanalysis(diagnostics_df).to_csv(table_dir / "preanalysis_summary.csv", index=False)
+    build_preanalysis_publication_table(diagnostics_df).to_csv(table_dir / "preanalysis_publication_table.csv", index=False)
     plot_preanalysis_heatmap(diagnostics_df, fig_dir / "preanalysis_heatmap.png")
 
     if break_rows_all:

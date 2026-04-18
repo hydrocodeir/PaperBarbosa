@@ -38,6 +38,7 @@ The pipeline writes outputs into `outputs/`:
 - final_summary_with_ci.csv
 - preanalysis_station_tests.csv *(Q1 pre-analysis checks)*
 - preanalysis_summary.csv *(Q1 pre-analysis aggregated stats)*
+- preanalysis_publication_table.csv *(manuscript-ready diagnostic table)*
 - homogenization_breakpoints.csv *(when homogenization is enabled)*
 - homogenization_adjustments.csv *(when homogenization is enabled)*
 - cluster_distance_matrix_tau_*.csv
@@ -83,10 +84,12 @@ The pipeline now runs a mandatory pre-analysis diagnostic stage for each station
 - ADF stationarity test (`adf_pvalue`)
 - Ljung-Box autocorrelation test (`ljungbox_pvalue`)
 - D’Agostino normality test (`normaltest_pvalue`)
+- Diagnostic reason tags (`reason_code`) مثل `ALL_NAN_AFTER_PREPROCESS`, `HIGH_MISSING_RATIO`, ...
 
 Outputs for paper reporting:
 - `outputs/tables/preanalysis_station_tests.csv`
-- `outputs/tables/preanalysis_summary.csv`
+- `outputs/tables/preanalysis_summary.csv` *(includes `reason_freq::...` rows for station diagnostic codes)*
+- `outputs/tables/preanalysis_publication_table.csv` *(final paper-style QC table with recommendations)*
 - `outputs/figures/preanalysis_heatmap.png`
 - `outputs/figures/<station>_preanalysis_panel.png`
 

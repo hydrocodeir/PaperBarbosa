@@ -494,20 +494,47 @@ def plot_station_preanalysis_panel(date, values, station_name, outpath):
 
     d = pd.to_datetime(date)
     y = pd.Series(values, index=d, dtype=float)
-    roll = y.rolling(30, min_periods=10).mean()
+    y_valid = y.dropna()
 
     fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=False)
 
-    axes[0].plot(d, y, color="0.55", linewidth=0.7, label="Daily")
-    axes[0].plot(d, roll, color="black", linewidth=1.2, label="30-day mean")
-    axes[0].set_title(f"{station_name}: pre-analysis quality panel")
-    axes[0].set_ylabel("Temperature (°C)")
-    axes[0].legend()
+    if y_valid.empty:
+        axes[0].text(
+            0.5,
+            0.5,
+            "No valid observations after preprocessing",
+            transform=axes[0].transAxes,
+            ha="center",
+            va="center",
+            fontsize=10,
+        )
+        axes[0].set_title(f"{station_name}: pre-analysis quality panel")
+        axes[0].set_ylabel("Temperature (°C)")
 
-    yy = y.dropna().to_numpy(dtype=float)
-    axes[1].hist(yy, bins=35, color="gray", edgecolor="black")
-    axes[1].set_xlabel("Temperature (°C)")
-    axes[1].set_ylabel("Count")
+        axes[1].text(
+            0.5,
+            0.5,
+            "Histogram unavailable (all values are NaN)",
+            transform=axes[1].transAxes,
+            ha="center",
+            va="center",
+            fontsize=9,
+        )
+        axes[1].set_xlabel("Temperature (°C)")
+        axes[1].set_ylabel("Count")
+    else:
+        roll = y_valid.rolling(30, min_periods=10).mean()
+        axes[0].plot(y_valid.index, y_valid.to_numpy(dtype=float), color="0.55", linewidth=0.7, label="Daily")
+        axes[0].plot(roll.index, roll.to_numpy(dtype=float), color="black", linewidth=1.2, label="30-day mean")
+        axes[0].set_title(f"{station_name}: pre-analysis quality panel")
+        axes[0].set_ylabel("Temperature (°C)")
+        axes[0].legend()
+
+        yy = y_valid.to_numpy(dtype=float)
+        bins = min(35, max(10, int(np.sqrt(yy.size))))
+        axes[1].hist(yy, bins=bins, color="gray", edgecolor="black")
+        axes[1].set_xlabel("Temperature (°C)")
+        axes[1].set_ylabel("Count")
 
     plt.tight_layout()
     plt.savefig(outpath, dpi=300, bbox_inches="tight")
