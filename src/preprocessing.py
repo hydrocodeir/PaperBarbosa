@@ -1,14 +1,76 @@
 import pandas as pd
 import numpy as np
+from pathlib import Path
+
+
+COLUMN_ALIASES = {
+    "station": ["station", "station_name", "stationid", "station_id", "stname", "name"],
+    "tmean": ["tmean", "tas", "temp", "temperature", "tavg", "t_mean"],
+    "tmin": ["tmin", "tn", "tasmin", "minimum_temperature", "t_min"],
+    "tmax": ["tmax", "tx", "tasmax", "maximum_temperature", "t_max"],
+}
+
+def _read_tabular(path):
+    p = Path(path)
+    suf = p.suffix.lower()
+    if suf in {".xlsx", ".xls"}:
+        return pd.read_excel(path)
+    # sep=None lets pandas sniff delimiter (comma/semicolon/tab/...)
+    return pd.read_csv(path, sep=None, engine="python")
+
+
+
+def _normalize_columns(df):
+    out = df.copy()
+    out.columns = [str(c).strip() for c in out.columns]
+    return out
+
+
+def _find_first_present(df, candidates):
+    lc_to_orig = {str(c).strip().lower(): c for c in df.columns}
+    for c in candidates:
+        if c.lower() in lc_to_orig:
+            return lc_to_orig[c.lower()]
+    return None
+
+
+def _coerce_numeric(series):
+    s = series.astype(str).str.replace(",", ".", regex=False).str.strip()
+    s = s.replace({"": np.nan, "nan": np.nan, "None": np.nan})
+    return pd.to_numeric(s, errors="coerce")
 
 
 def load_data(path, date_cols):
-    df = pd.read_csv(path)
-    missing = [c for c in date_cols if c not in df.columns]
-    if missing:
-        raise ValueError(f"Missing date columns: {missing}")
-    df["date"] = pd.to_datetime(df[date_cols])
+    df = _read_tabular(path)
+    df = _normalize_columns(df)
+
+    # Resolve date columns case-insensitively
+    lc_to_orig = {str(c).strip().lower(): c for c in df.columns}
+    resolved_date_cols = []
+    for c in date_cols:
+        key = str(c).strip().lower()
+        if key not in lc_to_orig:
+            raise ValueError(f"Missing date columns: {date_cols}")
+        resolved_date_cols.append(lc_to_orig[key])
+
+    df["date"] = pd.to_datetime(df[resolved_date_cols], errors="coerce")
+
+    # Harmonize common climate column names to pipeline defaults
+    st_col = _find_first_present(df, COLUMN_ALIASES["station"])
+    if st_col is not None and st_col != "station_name":
+        df = df.rename(columns={st_col: "station_name"})
+
+    for key in ["tmin", "tmax", "tmean"]:
+        src = _find_first_present(df, COLUMN_ALIASES[key])
+        if src is not None and src != key:
+            df = df.rename(columns={src: key})
+
+    for col in ["tmin", "tmax", "tmean"]:
+        if col in df.columns:
+            df[col] = _coerce_numeric(df[col])
+
     return df
+
 
 def fill_tmean(df):
     df = df.copy()
@@ -63,9 +125,11 @@ def reindex_station_daily(sub):
         out["station_id"] = sub["station_id"].iloc[0]
     return out
 
+
 def fill_short_gaps(series, max_gap=3):
     s = pd.Series(series, dtype=float)
     return s.interpolate(limit=max_gap, limit_direction="both").to_numpy()
+
 
 def fill_with_doy_climatology(dates, values):
     s = pd.Series(values, index=pd.to_datetime(dates), dtype=float)
@@ -77,6 +141,7 @@ def fill_with_doy_climatology(dates, values):
         filled.loc[miss] = [clim.get(d, np.nan) for d in doy[miss]]
     return filled.to_numpy()
 
+
 def screen_outliers_sigma(values, sigma=7.0):
     s = pd.Series(values, dtype=float)
     mu = s.mean(skipna=True)
@@ -87,9 +152,15 @@ def screen_outliers_sigma(values, sigma=7.0):
     s.loc[mask] = np.nan
     return s.to_numpy(), mask
 
+
 def prepare_station_series(sub, target_variable="tmean", max_gap=3, outlier_sigma=7.0):
     sub = reindex_station_daily(sub)
-    vals = sub[target_variable].to_numpy(dtype=float) if target_variable in sub.columns else np.full(len(sub), np.nan)
+    if target_variable not in sub.columns:
+        raise ValueError(
+            f"Target variable '{target_variable}' not found after load/preprocess. "
+            f"Available columns: {list(sub.columns)}"
+        )
+    vals = sub[target_variable].to_numpy(dtype=float)
     vals = fill_short_gaps(vals, max_gap=max_gap)
     vals = fill_with_doy_climatology(sub["date"], vals)
     vals, outlier_mask = screen_outliers_sigma(vals, sigma=outlier_sigma)
@@ -98,3 +169,40 @@ def prepare_station_series(sub, target_variable="tmean", max_gap=3, outlier_sigm
     sub[target_variable] = vals
     sub["outlier_flag"] = outlier_mask.astype(int)
     return sub
+
+
+def run_input_precheck(df, station_col="station_name", target_col="tmean", date_col="date"):
+    """Return one-row dataframe with input health checks before station processing."""
+    row_count = int(len(df))
+    station_missing_ratio = float(df[station_col].isna().mean()) if station_col in df.columns and row_count else 1.0
+    target_missing_ratio = float(df[target_col].isna().mean()) if target_col in df.columns and row_count else 1.0
+    invalid_date_ratio = float(df[date_col].isna().mean()) if date_col in df.columns and row_count else 1.0
+    n_stations = int(df[station_col].nunique(dropna=True)) if station_col in df.columns else 0
+
+    issues = []
+    if row_count == 0:
+        issues.append("EMPTY_INPUT")
+    if len(df.columns) <= 1:
+        issues.append("BAD_DELIMITER_OR_SINGLE_COLUMN")
+    if invalid_date_ratio > 0:
+        issues.append("INVALID_DATES_PRESENT")
+    if station_missing_ratio > 0:
+        issues.append("MISSING_STATION_IDS")
+    if target_missing_ratio >= 0.95:
+        issues.append("TARGET_ALMOST_ALL_MISSING")
+    if n_stations == 0:
+        issues.append("NO_STATION_FOUND")
+
+    status = "OK" if not issues else ("FAIL" if "TARGET_ALMOST_ALL_MISSING" in issues or "NO_STATION_FOUND" in issues or "EMPTY_INPUT" in issues or "BAD_DELIMITER_OR_SINGLE_COLUMN" in issues else "WARN")
+
+    return pd.DataFrame([
+        {
+            "status": status,
+            "issues": "|".join(issues) if issues else "NONE",
+            "row_count": row_count,
+            "station_count": n_stations,
+            "invalid_date_ratio": invalid_date_ratio,
+            "station_missing_ratio": station_missing_ratio,
+            "target_missing_ratio": target_missing_ratio,
+        }
+    ])

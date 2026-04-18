@@ -9,6 +9,7 @@ from src.preprocessing import (
     fill_tmean,
     prepare_station_series,
     filter_station_coverage,
+    run_input_precheck,
 )
 from src.feature_engineering import deseasonalize, decade_index
 from src.homogenization import detect_breakpoints_snht, mean_shift_adjustment
@@ -196,6 +197,19 @@ def main():
 
     df = load_data(cfg["data_path"], cfg["date_cols"])
     df = fill_tmean(df)
+
+    precheck_cfg = cfg.get("precheck", {})
+    precheck_df = run_input_precheck(
+        df,
+        station_col=cfg.get("station_col", "station_name"),
+        target_col=cfg.get("target_variable", "tmean"),
+        date_col="date",
+    )
+    precheck_df.to_csv(table_dir / "precheck_input_report.csv", index=False)
+    if bool(precheck_cfg.get("stop_on_fail", True)) and str(precheck_df["status"].iloc[0]).upper() == "FAIL":
+        raise ValueError(
+            "Input precheck failed. See outputs/tables/precheck_input_report.csv for details."
+        )
     df = filter_station_coverage(
         df,
         station_col=cfg["station_col"],

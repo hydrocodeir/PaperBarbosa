@@ -29,3 +29,7 @@ diagnostics:
   max_missing_ratio: 0.05
   outlier_sigma: 4.0
   ljungbox_lag: 30
+
+precheck:
+  stop_on_fail: true
+
